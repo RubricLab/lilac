@@ -181,18 +181,35 @@ export default function ToggleRealtime() {
 	useEffect(() => {
 		cancelInitRef.current = false
 		let cancelled = false
+		let visibilityCleanup: (() => void) | null = null
 
 		const run = async () => {
 			if (cancelled) return
 			await beginSession()
 		}
 
-		void run()
+		const startWhenVisible = () => {
+			if (cancelled) return
+			void run()
+		}
+
+		if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
+			const handleVisibility = () => {
+				if (document.visibilityState !== 'visible') return
+				document.removeEventListener('visibilitychange', handleVisibility)
+				startWhenVisible()
+			}
+			document.addEventListener('visibilitychange', handleVisibility)
+			visibilityCleanup = () => document.removeEventListener('visibilitychange', handleVisibility)
+		} else {
+			startWhenVisible()
+		}
 
 		return () => {
 			cancelled = true
 			cancelInitRef.current = true
 			startedRef.current = false
+			visibilityCleanup?.()
 			stop()
 			try {
 				sourceRef.current?.disconnect()

@@ -1,6 +1,14 @@
 'use client'
 
-import { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react'
+import {
+	createContext,
+	useCallback,
+	useContext,
+	useEffect,
+	useMemo,
+	useRef,
+	useState
+} from 'react'
 
 import { createRealtimeSession } from '@/app/actions/realtime'
 
@@ -20,15 +28,133 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
 	const [dataChannel, setDataChannel] = useState<RTCDataChannel | null>(null)
 	const peerRef = useRef<RTCPeerConnection | null>(null)
 	const localRef = useRef<MediaStream | null>(null)
+	const trackMonitorCleanupRef = useRef<(() => void) | null>(null)
+	const restartingMicRef = useRef(false)
+	const restartAttemptsRef = useRef<{ since: number; count: number }>({ since: 0, count: 0 })
+	const restartLocalStreamRef = useRef<(reason?: string) => Promise<void> | void>()
+
+	const clearMonitor = useCallback(() => {
+		trackMonitorCleanupRef.current?.()
+		trackMonitorCleanupRef.current = null
+	}, [])
+
+	const attachTrackMonitors = useCallback((stream: MediaStream) => {
+		clearMonitor()
+		const [track] = stream.getAudioTracks()
+		if (!track) return
+
+		console.log('[realtime] monitoring microphone track', { id: track.id })
+
+		const scheduleRestart = (reason: string) => {
+			console.warn('[realtime] microphone track lost', { reason })
+			try {
+				restartLocalStreamRef.current?.(reason)
+			} catch (error) {
+				console.error('[realtime] mic restart handler threw', error)
+			}
+		}
+
+		let muteTimer: ReturnType<typeof setTimeout> | null = null
+
+		const handleEnded = () => scheduleRestart('track-ended')
+		const handleMute = () => {
+			if (!track.muted) return
+			if (muteTimer) clearTimeout(muteTimer)
+			muteTimer = setTimeout(() => {
+				if (!track.muted) return
+				scheduleRestart('track-muted')
+			}, 650)
+		}
+		const handleUnmute = () => {
+			if (!muteTimer) return
+			clearTimeout(muteTimer)
+			muteTimer = null
+		}
+
+		track.addEventListener('ended', handleEnded)
+		track.addEventListener('mute', handleMute)
+		track.addEventListener('unmute', handleUnmute)
+
+		trackMonitorCleanupRef.current = () => {
+			if (muteTimer) {
+				clearTimeout(muteTimer)
+				muteTimer = null
+			}
+			track.removeEventListener('ended', handleEnded)
+			track.removeEventListener('mute', handleMute)
+			track.removeEventListener('unmute', handleUnmute)
+		}
+	}, [clearMonitor])
+
+	const restartLocalStream = useCallback(
+		async (reason = 'unknown') => {
+			if (!peerRef.current) {
+				console.warn('[realtime] skipping microphone restart, no peer connection', { reason })
+				return
+			}
+			if (restartingMicRef.current) {
+				console.log('[realtime] microphone restart already running', { reason })
+				return
+			}
+
+			const now = Date.now()
+			const windowMs = 8_000
+			if (now - restartAttemptsRef.current.since > windowMs) {
+				restartAttemptsRef.current = { since: now, count: 0 }
+			}
+			if (restartAttemptsRef.current.count >= 3) {
+				console.warn('[realtime] suppressing microphone restart, too many attempts', {
+					reason
+				})
+				return
+			}
+			restartAttemptsRef.current.count += 1
+			restartingMicRef.current = true
+
+			try {
+				console.log('[realtime] restarting microphone stream', { reason })
+				const fresh = await navigator.mediaDevices.getUserMedia({ audio: true })
+				attachTrackMonitors(fresh)
+				const previous = localRef.current
+				localRef.current = fresh
+				const [track] = fresh.getAudioTracks()
+				if (!track) throw new Error('Mic restart produced no audio track')
+				const sender = peerRef.current
+					.getSenders()
+					.find(candidate => candidate.track?.kind === 'audio')
+				if (sender) {
+					await sender.replaceTrack(track)
+					console.log('[realtime] replaced outbound audio track', { trackId: track.id })
+				} else {
+					peerRef.current.addTrack(track, fresh)
+					console.log('[realtime] added outbound audio track after restart', {
+						trackId: track.id
+					})
+				}
+				for (const prevTrack of previous?.getTracks() ?? []) prevTrack.stop()
+				restartAttemptsRef.current = { since: now, count: 0 }
+			} catch (error) {
+				console.error('[realtime] failed to restart microphone', error)
+			} finally {
+				restartingMicRef.current = false
+			}
+		},
+		[attachTrackMonitors]
+	)
+
+	restartLocalStreamRef.current = restartLocalStream
 
 	const cleanup = useCallback(() => {
 		peerRef.current?.close()
 		peerRef.current = null
 		for (const track of localRef.current?.getTracks() ?? []) track.stop()
 		localRef.current = null
+		clearMonitor()
+		restartingMicRef.current = false
+		restartAttemptsRef.current = { since: 0, count: 0 }
 		setRemoteStream(null)
 		setDataChannel(null)
-	}, [])
+	}, [clearMonitor])
 
 	const start = useCallback(
 		async (opts?: { instructions?: string; voice?: string; model?: string }) => {
@@ -47,6 +173,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
 				audioTracks: mic.getAudioTracks().length
 			})
 			localRef.current = mic
+			attachTrackMonitors(mic)
 
 			const pc = new RTCPeerConnection()
 			peerRef.current = pc
@@ -196,6 +323,29 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
 		}),
 		[dataChannel, remoteStream, start, updateInstructions, updateVoice, stop]
 	)
+
+	useEffect(() => {
+		if (typeof document === 'undefined') return
+		const handleVisibility = () => {
+			if (document.visibilityState !== 'visible') return
+			const track = localRef.current?.getAudioTracks()[0]
+			if (track && track.readyState === 'live') return
+			void restartLocalStream('visibilitychange')
+		}
+		document.addEventListener('visibilitychange', handleVisibility)
+		return () => document.removeEventListener('visibilitychange', handleVisibility)
+	}, [restartLocalStream])
+
+	useEffect(() => {
+		if (typeof window === 'undefined') return
+		const handlePageShow = (event: PageTransitionEvent) => {
+			if (event.persisted) {
+				void restartLocalStream('pageshow')
+			}
+		}
+		window.addEventListener('pageshow', handlePageShow)
+		return () => window.removeEventListener('pageshow', handlePageShow)
+	}, [restartLocalStream])
 
 	return <RealtimeContext.Provider value={value}>{children}</RealtimeContext.Provider>
 }
