@@ -29,4 +29,12 @@ body {
 		"SF Pro Display", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 	background: var(--lilac-surface);
 	color: var(--lilac-ink);
+	overflow: hidden;
+	overscroll-behavior: none;
+	touch-action: manipulation;
+}
+
+html,
+body {
+	height: 100%;
 }
