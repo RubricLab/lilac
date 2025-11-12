@@ -1,9 +1,5 @@
-import ToggleRealtime from './ToggleRealtime'
+import LilacExperience from './LilacExperience'
 
 export default function Page() {
-	return (
-		<main className="flex min-h-screen items-center justify-center p-6">
-			<ToggleRealtime />
-		</main>
-	)
+        return <LilacExperience />
 }

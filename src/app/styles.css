@@ -1,1 +1,45 @@
 @import "tailwindcss";
+
+:root {
+        color-scheme: light dark;
+        --lilac-light: #f7f3e7;
+        --lilac-dark: #27244c;
+        --lilac-haze: rgba(255, 255, 255, 0.65);
+        --lilac-violet: rgba(176, 158, 255, 0.2);
+        --lilac-deep: #211b3a;
+}
+
+body.lilac-body {
+        background: radial-gradient(circle at top center, rgba(255, 255, 255, 0.95), var(--lilac-light));
+        color: var(--lilac-deep);
+        margin: 0;
+        min-height: 100vh;
+        transition: background 0.6s ease, color 0.6s ease;
+}
+
+.bg-lilac-surface {
+        background: radial-gradient(160% 120% at 50% 0%, rgba(255, 255, 255, 0.92) 0%, rgba(247, 243, 231, 0.88) 45%, rgba(232, 226, 255, 0.82) 72%, rgba(226, 221, 255, 0.75) 100%);
+}
+
+.bg-lilac-radiance {
+        background: radial-gradient(120% 140% at 50% 10%, rgba(180, 167, 255, 0.25), transparent 65%),
+                radial-gradient(120% 120% at 20% 80%, rgba(255, 207, 227, 0.2), transparent 60%),
+                radial-gradient(140% 160% at 80% 70%, rgba(164, 225, 255, 0.15), transparent 70%);
+}
+
+@media (prefers-color-scheme: dark) {
+        body.lilac-body {
+                background: radial-gradient(circle at top center, rgba(52, 46, 90, 0.9), var(--lilac-dark));
+                color: #f7f3ff;
+        }
+
+        .bg-lilac-surface {
+                background: radial-gradient(180% 140% at 50% 0%, rgba(55, 47, 94, 0.92) 0%, rgba(39, 36, 76, 0.88) 45%, rgba(62, 52, 109, 0.82) 75%, rgba(39, 36, 76, 0.78) 100%);
+        }
+
+        .bg-lilac-radiance {
+                background: radial-gradient(140% 160% at 50% 5%, rgba(125, 109, 213, 0.4), transparent 60%),
+                        radial-gradient(160% 140% at 20% 80%, rgba(255, 168, 213, 0.25), transparent 70%),
+                        radial-gradient(120% 180% at 80% 70%, rgba(108, 183, 255, 0.25), transparent 70%);
+        }
+}

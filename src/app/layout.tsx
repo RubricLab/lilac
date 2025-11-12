@@ -33,11 +33,11 @@ export const viewport: Viewport = {
 }
 
 export default function RootLayout({ children }: { children: ReactNode }) {
-	return (
-		<html lang="en">
-			<body className="bg-neutral-100 text-neutral-900 antialiased">
-				<RealtimeProvider>{children}</RealtimeProvider>
-			</body>
-		</html>
-	)
+        return (
+                <html lang="en">
+                        <body className="lilac-body antialiased">
+                                <RealtimeProvider>{children}</RealtimeProvider>
+                        </body>
+                </html>
+        )
 }
