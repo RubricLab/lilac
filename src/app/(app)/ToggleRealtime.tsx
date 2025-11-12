@@ -105,7 +105,7 @@ export default function ToggleRealtime() {
 
 	return (
 		<div className="flex flex-col items-start gap-3">
-			<label className="flex w-full max-w-md flex-col gap-1 text-sm">
+			{/* <label className="flex w-full max-w-md flex-col gap-1 text-sm">
 				<span className="text-neutral-600">System prompt</span>
 				<input
 					className="w-full rounded border border-neutral-300 px-3 py-2"
@@ -113,8 +113,8 @@ export default function ToggleRealtime() {
 					placeholder="You are a helpful assistant."
 					value={prompt}
 				/>
-			</label>
-			<label className="flex w-full max-w-md flex-col gap-1 text-sm">
+			</label> */}
+			{/* <label className="flex w-full max-w-md flex-col gap-1 text-sm">
 				<span className="text-neutral-600">Voice</span>
 				<select
 					className="w-full rounded border border-neutral-300 px-3 py-2"
@@ -126,10 +126,10 @@ export default function ToggleRealtime() {
 					<option value="echo">echo</option>
 					<option value="shimmer">shimmer</option>
 				</select>
-			</label>
+			</label> */}
 			<label className="flex items-center gap-2 text-sm">
 				<input checked={enabled} onChange={e => setEnabled(e.target.checked)} type="checkbox" />
-				<span>Realtime</span>
+				<span>Translate</span>
 			</label>
 		</div>
 	)
