@@ -112,6 +112,7 @@ export default function ToggleRealtime() {
 		let cancelled = false
 
 		const connectRemoteAudio = async () => {
+			if (cancelled) return
 			console.log('[lilac] remoteStream updated', {
 				hasStream: Boolean(remoteStream),
 				tracks: remoteStream?.getTracks().length
