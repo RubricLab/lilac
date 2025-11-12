@@ -35,7 +35,7 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: ReactNode }) {
 	return (
 		<html lang="en">
-			<body className="bg-neutral-100 text-neutral-900 antialiased">
+			<body className="min-h-svh bg-[var(--lilac-surface)] text-[var(--lilac-ink)] antialiased transition-colors">
 				<RealtimeProvider>{children}</RealtimeProvider>
 			</body>
 		</html>
