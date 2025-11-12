@@ -2,7 +2,7 @@ import type { MetadataRoute } from 'next'
 
 export default function manifest(): MetadataRoute.Manifest {
 	return {
-		background_color: '#F7F3E7',
+		background_color: '#120C1E',
 		display: 'standalone',
 		icons: [
 			{
@@ -24,6 +24,6 @@ export default function manifest(): MetadataRoute.Manifest {
 		scope: '/',
 		short_name: 'Lilac',
 		start_url: '/',
-		theme_color: '#F7F3E7'
+		theme_color: '#120C1E'
 	}
 }

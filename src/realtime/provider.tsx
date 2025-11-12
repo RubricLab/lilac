@@ -87,7 +87,6 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
 			setDataChannel(dc)
 			dc.addEventListener('open', () => {
 				console.log('[realtime] datachannel open')
-				// Ensure session settings (voice/instructions) are applied then trigger a first response.
 				try {
 					if (opts?.voice || opts?.instructions) {
 						dc.send(
@@ -101,18 +100,6 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
 						)
 						console.log('[realtime] sent session.update')
 					}
-				} catch {}
-				try {
-					dc.send(
-						JSON.stringify({
-							response: {
-								// If instructions provided, model may greet appropriately; otherwise send a short greeting.
-								...(opts?.instructions ? {} : { instructions: 'Hello! I am ready to translate.' })
-							},
-							type: 'response.create'
-						})
-					)
-					console.log('[realtime] sent response.create')
 				} catch {}
 			})
 			dc.addEventListener('close', () => {

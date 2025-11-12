@@ -1,1 +1,40 @@
 @import "tailwindcss";
+
+:root {
+	color-scheme: light dark;
+	--lilac-surface: #f7f3e7;
+	--lilac-elevated: rgba(255, 255, 255, 0.7);
+	--lilac-ink: #352049;
+	--lilac-ink-muted: rgba(53, 32, 73, 0.62);
+}
+
+@media (prefers-color-scheme: dark) {
+	:root {
+		--lilac-surface: #120c1e;
+		--lilac-elevated: rgba(255, 255, 255, 0.08);
+		--lilac-ink: #f6f1ff;
+		--lilac-ink-muted: rgba(246, 241, 255, 0.64);
+	}
+}
+
+*,
+*::before,
+*::after {
+	box-sizing: border-box;
+}
+
+body {
+	margin: 0;
+	font-family:
+		"SF Pro Display", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+	background: var(--lilac-surface);
+	color: var(--lilac-ink);
+	overflow: hidden;
+	overscroll-behavior: none;
+	touch-action: manipulation;
+}
+
+html,
+body {
+	height: 100%;
+}

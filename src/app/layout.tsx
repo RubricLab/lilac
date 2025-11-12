@@ -5,6 +5,11 @@ import './styles.css'
 import { RealtimeProvider } from '@/realtime/provider'
 
 export const metadata: Metadata = {
+	appleWebApp: {
+		capable: true,
+		statusBarStyle: 'black-translucent',
+		title: 'Lilac'
+	},
 	applicationName: 'Lilac',
 	description: 'A real-time voice translation app.',
 	icons: {
@@ -16,7 +21,7 @@ export const metadata: Metadata = {
 	manifest: '/manifest.webmanifest',
 	themeColor: [
 		{ color: '#F7F3E7', media: '(prefers-color-scheme: light)' },
-		{ color: '#27244C', media: '(prefers-color-scheme: dark)' }
+		{ color: '#120C1E', media: '(prefers-color-scheme: dark)' }
 	],
 	title: {
 		default: 'Lilac',
@@ -35,7 +40,7 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: ReactNode }) {
 	return (
 		<html lang="en">
-			<body className="bg-neutral-100 text-neutral-900 antialiased">
+			<body className="min-h-svh bg-[var(--lilac-surface)] text-[var(--lilac-ink)] antialiased transition-colors">
 				<RealtimeProvider>{children}</RealtimeProvider>
 			</body>
 		</html>
