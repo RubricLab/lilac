@@ -31,7 +31,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
 	const trackMonitorCleanupRef = useRef<(() => void) | null>(null)
 	const restartingMicRef = useRef(false)
 	const restartAttemptsRef = useRef<{ since: number; count: number }>({ since: 0, count: 0 })
-	const restartLocalStreamRef = useRef<(reason?: string) => Promise<void> | void>()
+	const restartLocalStreamRef = useRef<((reason?: string) => Promise<void> | void) | null>(null)
 
 	const clearMonitor = useCallback(() => {
 		trackMonitorCleanupRef.current?.()
