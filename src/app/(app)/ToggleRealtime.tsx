@@ -37,17 +37,25 @@ const languagePhrases = [
 	{ code: 'it', text: 'Presentati' }
 ]
 
-type ConnectionState = 'idle' | 'requesting' | 'ready' | 'error'
+type SessionState = 'idle' | 'requesting' | 'listening' | 'error'
 
 export default function ToggleRealtime() {
 	const { start, stop, remoteStream } = useRealtimeVoiceSession()
-	const [connectionState, setConnectionState] = useState<ConnectionState>('idle')
+	const [sessionState, setSessionState] = useState<SessionState>('idle')
 	const [errorMessage, setErrorMessage] = useState<string | null>(null)
 	const [languageOrder, setLanguageOrder] = useState(languagePhrases)
+	const [isStandalone, setIsStandalone] = useState(false)
 	const audioContextRef = useRef<AudioContext | null>(null)
 	const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null)
-	const startedRef = useRef(false)
-	const cancelInitRef = useRef(false)
+	const startPendingRef = useRef(false)
+
+	useEffect(() => {
+		if (typeof window === 'undefined') return
+		const standalone =
+			window.matchMedia?.('(display-mode: standalone)').matches ||
+			(window.navigator as unknown as { standalone?: boolean }).standalone === true
+		setIsStandalone(Boolean(standalone))
+	}, [])
 
 	useEffect(() => {
 		if (typeof navigator === 'undefined') return
@@ -79,11 +87,11 @@ export default function ToggleRealtime() {
 		setLanguageOrder(prioritized)
 	}, [])
 
-	const ensureAudioContext = useCallback(() => {
+	const ensureAudioContext = useCallback(async () => {
 		const Ctx =
 			window.AudioContext ??
 			(window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
-		if (!Ctx) throw new Error('AudioContext is not supported in this browser')
+		if (!Ctx) throw new Error('AudioContext is not supported on this device')
 
 		if (!audioContextRef.current) {
 			audioContextRef.current = new Ctx()
@@ -91,127 +99,136 @@ export default function ToggleRealtime() {
 		}
 
 		if (audioContextRef.current.state === 'suspended') {
-			void audioContextRef.current
-				.resume()
-				.then(() => {
-					console.log('[lilac] AudioContext resumed', {
-						state: audioContextRef.current?.state
-					})
+			try {
+				await audioContextRef.current.resume()
+				console.log('[lilac] AudioContext resumed', {
+					state: audioContextRef.current?.state
 				})
-				.catch(error => {
-					console.warn('[lilac] failed to resume AudioContext', error)
-				})
+			} catch (error) {
+				console.warn('[lilac] failed to resume AudioContext', error)
+			}
 		}
 
 		return audioContextRef.current
 	}, [])
 
-	useEffect(() => {
-		if (!remoteStream) return
-
-		let cancelled = false
-
-		const connectRemoteAudio = async () => {
-			console.log('[lilac] remoteStream updated', {
-				hasStream: Boolean(remoteStream),
-				tracks: remoteStream?.getTracks().length
-			})
-
-			if (!remoteStream.getAudioTracks().length) {
-				const onAddTrack = () => {
-					remoteStream.removeEventListener('addtrack', onAddTrack as EventListener)
-					void connectRemoteAudio()
-				}
-				remoteStream.addEventListener('addtrack', onAddTrack as EventListener)
-				return
-			}
-
-			try {
-				const ctx = ensureAudioContext()
-				if (!ctx || cancelled) return
-				const src = ctx.createMediaStreamSource(remoteStream)
-				sourceRef.current = src
-				src.connect(ctx.destination)
-			} catch (error) {
-				console.error('[lilac] failed to connect remote audio', error)
-			}
-		}
-
-		void connectRemoteAudio()
-
-		return () => {
-			cancelled = true
-			console.log('[lilac] cleaning audio graph')
-			try {
-				sourceRef.current?.disconnect()
-			} catch {}
-			sourceRef.current = null
-			try {
-				void audioContextRef.current?.close()
-			} catch {}
-			audioContextRef.current = null
-		}
-	}, [remoteStream, ensureAudioContext])
-
-	const beginSession = useCallback(async () => {
-		if (startedRef.current) return
-		startedRef.current = true
-		setConnectionState('requesting')
-		setErrorMessage(null)
-
+	const cleanupAudioGraph = useCallback(() => {
 		try {
-			ensureAudioContext()
-			await start({ instructions: defaultPrompt, voice: 'verse' })
-			if (cancelInitRef.current) {
-				startedRef.current = false
-				return
-			}
-			setConnectionState('ready')
-		} catch (error) {
-			console.error('[lilac] failed to start realtime session', error)
-			startedRef.current = false
-			if (cancelInitRef.current) return
-			setConnectionState('error')
-			const message =
-				error instanceof Error ? error.message : 'Something went wrong while starting Lilac.'
-			setErrorMessage(message)
-		}
-	}, [ensureAudioContext, start])
-
-	useEffect(() => {
-		cancelInitRef.current = false
-		let cancelled = false
-
-		const run = async () => {
-			if (cancelled) return
-			await beginSession()
-		}
-
-		void run()
-
-		return () => {
-			cancelled = true
-			cancelInitRef.current = true
-			startedRef.current = false
-			stop()
+			sourceRef.current?.disconnect()
+		} catch {}
+		sourceRef.current = null
+		if (audioContextRef.current) {
 			try {
-				sourceRef.current?.disconnect()
-			} catch {}
-			sourceRef.current = null
-			try {
-				void audioContextRef.current?.close()
+				void audioContextRef.current.close()
 			} catch {}
 			audioContextRef.current = null
 		}
-	}, [beginSession, stop])
+	}, [])
+
+	const handleStop = useCallback(() => {
+		startPendingRef.current = false
+		stop()
+		cleanupAudioGraph()
+		setSessionState('idle')
+		setErrorMessage(null)
+	}, [cleanupAudioGraph, stop])
+
+	const handleStart = useCallback(async () => {
+		if (startPendingRef.current) return
+		startPendingRef.current = true
+		setErrorMessage(null)
+		setSessionState('requesting')
+		try {
+			await ensureAudioContext()
+			await start({ instructions: defaultPrompt, voice: 'verse' })
+			setSessionState('listening')
+		} catch (error) {
+			console.error('[lilac] unable to start session', error)
+			const message =
+				error instanceof Error
+					? error.message
+					: 'Something went wrong while requesting the microphone.'
+			setErrorMessage(message)
+			setSessionState('error')
+			cleanupAudioGraph()
+			stop()
+		} finally {
+			startPendingRef.current = false
+		}
+	}, [cleanupAudioGraph, ensureAudioContext, start, stop])
+
+	useEffect(() => {
+		if (!remoteStream) return cleanupAudioGraph
+
+		let cancelled = false
+
+		const connect = async () => {
+			try {
+				const ctx = await ensureAudioContext()
+				if (!ctx || cancelled) return
+				if (!remoteStream.getAudioTracks().length) {
+					const handleAddTrack = () => {
+						remoteStream.removeEventListener('addtrack', handleAddTrack as EventListener)
+						void connect()
+					}
+					remoteStream.addEventListener('addtrack', handleAddTrack as EventListener)
+					return
+				}
+				const node = ctx.createMediaStreamSource(remoteStream)
+				try {
+					sourceRef.current?.disconnect()
+				} catch {}
+				sourceRef.current = node
+				node.connect(ctx.destination)
+			} catch (error) {
+				if (!cancelled) {
+					console.error('[lilac] failed to wire remote audio', error)
+				}
+			}
+		}
+
+		void connect()
+
+		return () => {
+			cancelled = true
+			cleanupAudioGraph()
+		}
+	}, [cleanupAudioGraph, ensureAudioContext, remoteStream])
+
+	useEffect(() => {
+		if (typeof document === 'undefined') return
+		const handleVisibility = () => {
+			if (document.visibilityState === 'hidden' && sessionState !== 'idle') {
+				console.log('[lilac] document hidden -> stopping session')
+				handleStop()
+			}
+		}
+		document.addEventListener('visibilitychange', handleVisibility)
+		return () => document.removeEventListener('visibilitychange', handleVisibility)
+	}, [handleStop, sessionState])
+
+	useEffect(() => {
+		if (typeof window === 'undefined') return
+		const handleBlur = () => {
+			if (sessionState !== 'idle') {
+				console.log('[lilac] window blur -> stopping session')
+				handleStop()
+			}
+		}
+		window.addEventListener('beforeunload', handleStop)
+		window.addEventListener('blur', handleBlur)
+		return () => {
+			window.removeEventListener('beforeunload', handleStop)
+			window.removeEventListener('blur', handleBlur)
+		}
+	}, [handleStop, sessionState])
 
 	const statusText = useMemo(() => {
-		if (connectionState === 'requesting') return 'Requesting microphone…'
-		if (connectionState === 'ready') return 'Listening'
-		if (connectionState === 'error')
-			return errorMessage ?? 'Unable to start. Check microphone permissions.'
-		return 'Preparing Lilac…'
-	}, [connectionState, errorMessage])
+		if (sessionState === 'requesting') return 'Requesting microphone…'
+		if (sessionState === 'listening') return 'Listening'
+		if (sessionState === 'error') return errorMessage ?? 'Unable to start. Check microphone permissions.'
+		return 'Tap start to begin listening.'
+	}, [errorMessage, sessionState])
 
 	const [activeIndex, setActiveIndex] = useState(0)
 
@@ -233,12 +250,13 @@ export default function ToggleRealtime() {
 			<div className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[28dvh] bg-gradient-to-b from-white/65 via-transparent to-transparent dark:from-[#2d2248]/60 dark:via-transparent" />
 			<div className="pointer-events-none absolute inset-x-0 bottom-0 -z-10 h-[32dvh] bg-gradient-to-t from-[var(--lilac-surface)] via-transparent to-transparent dark:from-[#120c1e] dark:via-transparent" />
 			<header
-				className="absolute left-0 right-0 z-10 flex justify-start px-6 text-sm font-medium uppercase tracking-wide text-[var(--lilac-ink-muted)]"
+				className="absolute left-0 right-0 z-10 flex justify-between px-6 text-sm font-medium uppercase tracking-wide text-[var(--lilac-ink-muted)]"
 				style={{ top: 'calc(env(safe-area-inset-top, 0px) + 1.75rem)' }}
 			>
 				<span>Lilac</span>
+				{isStandalone && <span>Home Screen</span>}
 			</header>
-			<div className="relative z-10 flex flex-1 items-center justify-center px-6 text-center">
+			<div className="relative z-10 flex flex-1 flex-col items-center justify-center gap-8 px-6 text-center">
 				<AnimatePresence mode="wait">
 					<motion.span
 						key={phrase?.code ?? 'fallback'}
@@ -251,12 +269,41 @@ export default function ToggleRealtime() {
 						{phrase?.text ?? 'Introduce yourself'}
 					</motion.span>
 				</AnimatePresence>
+				<div className="flex flex-col items-center gap-4">
+					<button
+						className="rounded-full bg-[var(--lilac-ink)] px-10 py-3 text-base font-semibold text-[var(--lilac-surface)] transition enabled:hover:bg-[var(--lilac-ink-muted)] disabled:cursor-not-allowed disabled:opacity-50"
+						disabled={sessionState === 'requesting' || sessionState === 'listening'}
+						onClick={handleStart}
+					>
+						{sessionState === 'requesting' ? 'Starting…' : 'Start listening'}
+					</button>
+					<button
+						className="rounded-full border border-[var(--lilac-ink-muted)] px-6 py-2 text-sm font-medium text-[var(--lilac-ink-muted)] transition enabled:hover:border-[var(--lilac-ink)] enabled:hover:text-[var(--lilac-ink)] disabled:opacity-40"
+						disabled={sessionState !== 'listening'}
+						onClick={handleStop}
+						type="button"
+					>
+						Stop
+					</button>
+				</div>
 			</div>
 			<footer
-				className="absolute left-0 right-0 z-10 flex justify-center px-6 text-xs font-medium uppercase tracking-[0.2em] text-[var(--lilac-ink-muted)]"
-				style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 2rem)' }}
+				className="absolute left-0 right-0 z-10 flex flex-col items-center gap-2 px-6 pb-10 text-xs font-medium uppercase tracking-[0.2em] text-[var(--lilac-ink-muted)]"
+				style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 1.5rem)' }}
 			>
 				<span>{statusText}</span>
+				{sessionState === 'error' && errorMessage ? (
+					<span className="max-w-xs text-[0.65rem] normal-case tracking-normal text-[var(--lilac-ink-muted)]">
+						{errorMessage}
+					</span>
+				) : null}
+				{sessionState === 'idle' && (
+					<span className="max-w-xs text-[0.65rem] normal-case tracking-normal text-[var(--lilac-ink-muted)]">
+						{isStandalone
+							? 'If the mic stops after reopening, tap Start again to refresh permissions.'
+							: 'For a full-screen experience add Lilac to your home screen.'}
+					</span>
+				)}
 			</footer>
 		</div>
 	)
