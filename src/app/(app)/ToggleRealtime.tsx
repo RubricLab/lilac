@@ -10,8 +10,8 @@ const defaultPrompt =
 export default function ToggleRealtime() {
 	const { start, stop, remoteStream, updateInstructions, updateVoice } = useRealtimeVoiceSession()
 	const [enabled, setEnabled] = useState(false)
-	const [prompt, setPrompt] = useState(defaultPrompt)
-	const [voice, setVoice] = useState('shimmer')
+	const [prompt, _setPrompt] = useState(defaultPrompt)
+	const [voice, _setVoice] = useState('shimmer')
 	const audioContextRef = useRef<AudioContext | null>(null)
 	const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null)
 
