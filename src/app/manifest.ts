@@ -2,7 +2,7 @@ import type { MetadataRoute } from 'next'
 
 export default function manifest(): MetadataRoute.Manifest {
 	return {
-		background_color: '#ffffff',
+		background_color: '#F7F3E7',
 		display: 'standalone',
 		icons: [
 			{
@@ -19,11 +19,11 @@ export default function manifest(): MetadataRoute.Manifest {
 			}
 		],
 		id: '/',
-		name: 'Lilac Voice',
+		name: 'Lilac Translate',
 		orientation: 'portrait-primary',
 		scope: '/',
-		short_name: 'Lilac',
+		short_name: 'Lilac Translate',
 		start_url: '/',
-		theme_color: '#000000'
+		theme_color: '#F7F3E7'
 	}
 }

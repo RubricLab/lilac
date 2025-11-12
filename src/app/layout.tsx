@@ -5,13 +5,16 @@ import './styles.css'
 import { RealtimeProvider } from '@/realtime/provider'
 
 export const metadata: Metadata = {
-	applicationName: 'Lilac Voice',
-	description: 'A minimal PWA that connects to the OpenAI Realtime API over WebRTC.',
+	applicationName: 'Lilac Translate',
+	description: 'A real-time voice translation app.',
 	manifest: '/manifest.webmanifest',
-	themeColor: '#000000',
+	themeColor: [
+		{ color: '#F7F3E7', media: '(prefers-color-scheme: light)' },
+		{ color: '#27244C', media: '(prefers-color-scheme: dark)' }
+	],
 	title: {
-		default: 'Lilac Voice',
-		template: '%s · Lilac Voice'
+		default: 'Lilac Translate',
+		template: '%s · Lilac Translate'
 	}
 }
 
