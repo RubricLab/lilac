@@ -22,7 +22,7 @@ export default function manifest(): MetadataRoute.Manifest {
 		name: 'Lilac Translate',
 		orientation: 'portrait-primary',
 		scope: '/',
-		short_name: 'Lilac Translate',
+		short_name: 'Lilac',
 		start_url: '/',
 		theme_color: '#F7F3E7'
 	}
