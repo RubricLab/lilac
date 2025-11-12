@@ -5,6 +5,11 @@ import './styles.css'
 import { RealtimeProvider } from '@/realtime/provider'
 
 export const metadata: Metadata = {
+	appleWebApp: {
+		capable: true,
+		statusBarStyle: 'black-translucent',
+		title: 'Lilac'
+	},
 	applicationName: 'Lilac',
 	description: 'A real-time voice translation app.',
 	icons: {

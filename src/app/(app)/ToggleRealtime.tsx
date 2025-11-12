@@ -43,7 +43,6 @@ export default function ToggleRealtime() {
 	const { start, stop, remoteStream, updateInstructions, updateVoice } = useRealtimeVoiceSession()
 	const [connectionState, setConnectionState] = useState<ConnectionState>('idle')
 	const [errorMessage, setErrorMessage] = useState<string | null>(null)
-	const [hasBootstrapped, setHasBootstrapped] = useState(false)
 	const [languageOrder, setLanguageOrder] = useState(languagePhrases)
 	const audioContextRef = useRef<AudioContext | null>(null)
 	const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null)
@@ -173,11 +172,17 @@ export default function ToggleRealtime() {
 	}, [ensureAudioContext, start, updateInstructions, updateVoice])
 
 	useEffect(() => {
-		if (hasBootstrapped) return
-		setHasBootstrapped(true)
-		void beginSession()
+		let cancelled = false
+
+		const run = async () => {
+			if (cancelled) return
+			await beginSession()
+		}
+
+		void run()
 
 		return () => {
+			cancelled = true
 			startedRef.current = false
 			stop()
 			try {
@@ -189,7 +194,7 @@ export default function ToggleRealtime() {
 			} catch {}
 			audioContextRef.current = null
 		}
-	}, [beginSession, hasBootstrapped, stop])
+	}, [beginSession, stop])
 
 	const statusText = useMemo(() => {
 		if (connectionState === 'requesting') return 'Requesting microphone…'
@@ -215,31 +220,33 @@ export default function ToggleRealtime() {
 
 	return (
 		<div className="relative flex min-h-svh flex-col overflow-hidden">
-			<div className="pointer-events-none absolute inset-0 bg-[radial-gradient(120%_120%_at_50%_15%,rgba(255,255,255,0.9)_0%,rgba(247,243,231,1)_55%,rgba(206,190,255,0.6)_100%)] dark:bg-[radial-gradient(120%_120%_at_50%_15%,rgba(40,31,61,0.9)_0%,rgba(24,18,38,1)_60%,rgba(89,70,120,0.65)_100%)]" />
+			<div className="pointer-events-none fixed inset-0 bg-[radial-gradient(180%_180%_at_50%_5%,rgba(255,255,255,0.95)_0%,rgba(247,243,231,1)_52%,rgba(206,190,255,0.55)_100%)] dark:bg-[radial-gradient(180%_180%_at_50%_5%,rgba(40,31,61,0.95)_0%,rgba(24,18,38,1)_58%,rgba(89,70,120,0.6)_100%)]" />
 			<div className="relative z-10 flex flex-1 flex-col">
-				<header className="flex items-center justify-between px-6 pt-12 pb-10 font-medium text-[var(--lilac-ink-muted)] text-sm tracking-wide">
-					<span className="uppercase">Lilac</span>
-					<span className="font-normal text-xs">next generation translator</span>
+				<header
+					className="flex items-center px-6 pb-10 text-sm font-medium uppercase tracking-wide text-[var(--lilac-ink-muted)]"
+					style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 3rem)' }}
+				>
+					<span>Lilac</span>
 				</header>
-				<div className="flex flex-1 items-center justify-center px-6">
-					<div className="rounded-3xl border border-white/30 bg-white/40 px-6 py-8 text-center shadow-[0_24px_80px_rgba(130,109,181,0.25)] backdrop-blur-lg transition-colors dark:border-white/10 dark:bg-white/5 dark:shadow-[0_24px_80px_rgba(40,30,70,0.45)]">
-						<AnimatePresence mode="wait">
-							<motion.span
-								key={phrase?.code ?? 'fallback'}
-								animate={{ opacity: 1, y: 0 }}
-								className="block font-semibold text-3xl text-[var(--lilac-ink)] tracking-tight sm:text-4xl"
-								exit={{ opacity: 0, y: 16 }}
-								initial={{ opacity: 0, y: -16 }}
-								transition={{ duration: 0.85, ease: 'easeInOut' }}
-							>
-								{phrase?.text ?? 'Introduce yourself'}
-							</motion.span>
-						</AnimatePresence>
-					</div>
+				<div className="flex flex-1 items-center justify-center px-6 text-center">
+					<AnimatePresence mode="wait">
+						<motion.span
+							key={phrase?.code ?? 'fallback'}
+							animate={{ opacity: 1, y: 0 }}
+							className="block text-3xl font-semibold tracking-tight text-[var(--lilac-ink)] sm:text-4xl"
+							exit={{ opacity: 0, y: 16 }}
+							initial={{ opacity: 0, y: -16 }}
+							transition={{ duration: 0.85, ease: 'easeInOut' }}
+						>
+							{phrase?.text ?? 'Introduce yourself'}
+						</motion.span>
+					</AnimatePresence>
 				</div>
-				<footer className="flex items-center justify-between px-6 pb-12 text-[var(--lilac-ink-muted)] text-xs">
-					<span>human-first, always on</span>
-					<span className="font-medium uppercase tracking-[0.2em]">{statusText}</span>
+				<footer
+					className="flex items-center justify-center px-6 text-xs font-medium uppercase tracking-[0.2em] text-[var(--lilac-ink-muted)]"
+					style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 3rem)' }}
+				>
+					<span>{statusText}</span>
 				</footer>
 			</div>
 		</div>
