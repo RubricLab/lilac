@@ -47,6 +47,7 @@ export default function ToggleRealtime() {
 	const audioContextRef = useRef<AudioContext | null>(null)
 	const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null)
 	const startedRef = useRef(false)
+	const cancelInitRef = useRef(false)
 
 	useEffect(() => {
 		if (typeof navigator === 'undefined') return
@@ -162,11 +163,16 @@ export default function ToggleRealtime() {
 			ensureAudioContext()
 			updateVoice('verse')
 			await start({ instructions: defaultPrompt, voice: 'verse' })
+			if (cancelInitRef.current) {
+				startedRef.current = false
+				return
+			}
 			updateInstructions(defaultPrompt)
 			setConnectionState('ready')
 		} catch (error) {
 			console.error('[lilac] failed to start realtime session', error)
 			startedRef.current = false
+			if (cancelInitRef.current) return
 			setConnectionState('error')
 			const message =
 				error instanceof Error ? error.message : 'Something went wrong while starting Lilac.'
@@ -175,6 +181,7 @@ export default function ToggleRealtime() {
 	}, [ensureAudioContext, start, updateInstructions, updateVoice])
 
 	useEffect(() => {
+		cancelInitRef.current = false
 		let cancelled = false
 
 		const run = async () => {
@@ -186,6 +193,7 @@ export default function ToggleRealtime() {
 
 		return () => {
 			cancelled = true
+			cancelInitRef.current = true
 			startedRef.current = false
 			stop()
 			try {
