@@ -40,7 +40,7 @@ const languagePhrases = [
 type ConnectionState = 'idle' | 'requesting' | 'ready' | 'error'
 
 export default function ToggleRealtime() {
-	const { start, stop, remoteStream, updateInstructions, updateVoice } = useRealtimeVoiceSession()
+	const { start, stop, remoteStream } = useRealtimeVoiceSession()
 	const [connectionState, setConnectionState] = useState<ConnectionState>('idle')
 	const [errorMessage, setErrorMessage] = useState<string | null>(null)
 	const [languageOrder, setLanguageOrder] = useState(languagePhrases)
@@ -161,13 +161,11 @@ export default function ToggleRealtime() {
 
 		try {
 			ensureAudioContext()
-			updateVoice('verse')
 			await start({ instructions: defaultPrompt, voice: 'verse' })
 			if (cancelInitRef.current) {
 				startedRef.current = false
 				return
 			}
-			updateInstructions(defaultPrompt)
 			setConnectionState('ready')
 		} catch (error) {
 			console.error('[lilac] failed to start realtime session', error)
@@ -178,7 +176,7 @@ export default function ToggleRealtime() {
 				error instanceof Error ? error.message : 'Something went wrong while starting Lilac.'
 			setErrorMessage(message)
 		}
-	}, [ensureAudioContext, start, updateInstructions, updateVoice])
+	}, [ensureAudioContext, start])
 
 	useEffect(() => {
 		cancelInitRef.current = false
