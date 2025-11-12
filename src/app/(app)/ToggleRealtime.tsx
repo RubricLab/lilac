@@ -40,14 +40,14 @@ const languagePhrases = [
 type ConnectionState = 'idle' | 'requesting' | 'ready' | 'error'
 
 export default function ToggleRealtime() {
-	const { start, stop, remoteStream, updateInstructions, updateVoice } = useRealtimeVoiceSession()
+	const { start, stop, remoteStream } = useRealtimeVoiceSession()
 	const [connectionState, setConnectionState] = useState<ConnectionState>('idle')
 	const [errorMessage, setErrorMessage] = useState<string | null>(null)
-	const [hasBootstrapped, setHasBootstrapped] = useState(false)
 	const [languageOrder, setLanguageOrder] = useState(languagePhrases)
 	const audioContextRef = useRef<AudioContext | null>(null)
 	const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null)
 	const startedRef = useRef(false)
+	const cancelInitRef = useRef(false)
 
 	useEffect(() => {
 		if (typeof navigator === 'undefined') return
@@ -79,7 +79,7 @@ export default function ToggleRealtime() {
 		setLanguageOrder(prioritized)
 	}, [])
 
-	const ensureAudioContext = useCallback(async () => {
+	const ensureAudioContext = useCallback(() => {
 		const Ctx =
 			window.AudioContext ??
 			(window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
@@ -90,11 +90,17 @@ export default function ToggleRealtime() {
 			console.log('[lilac] created AudioContext', { state: audioContextRef.current.state })
 		}
 
-		try {
-			await audioContextRef.current.resume()
-			console.log('[lilac] AudioContext resumed', { state: audioContextRef.current.state })
-		} catch (error) {
-			console.warn('[lilac] failed to resume AudioContext', error)
+		if (audioContextRef.current.state === 'suspended') {
+			void audioContextRef.current
+				.resume()
+				.then(() => {
+					console.log('[lilac] AudioContext resumed', {
+						state: audioContextRef.current?.state
+					})
+				})
+				.catch(error => {
+					console.warn('[lilac] failed to resume AudioContext', error)
+				})
 		}
 
 		return audioContextRef.current
@@ -121,11 +127,8 @@ export default function ToggleRealtime() {
 			}
 
 			try {
-				const ctx = await ensureAudioContext()
+				const ctx = ensureAudioContext()
 				if (!ctx || cancelled) return
-				if (ctx.state === 'suspended') {
-					await ctx.resume().catch(() => {})
-				}
 				const src = ctx.createMediaStreamSource(remoteStream)
 				sourceRef.current = src
 				src.connect(ctx.destination)
@@ -157,27 +160,38 @@ export default function ToggleRealtime() {
 		setErrorMessage(null)
 
 		try {
-			await ensureAudioContext()
-			updateVoice('verse')
+			ensureAudioContext()
 			await start({ instructions: defaultPrompt, voice: 'verse' })
-			updateInstructions(defaultPrompt)
+			if (cancelInitRef.current) {
+				startedRef.current = false
+				return
+			}
 			setConnectionState('ready')
 		} catch (error) {
 			console.error('[lilac] failed to start realtime session', error)
 			startedRef.current = false
+			if (cancelInitRef.current) return
 			setConnectionState('error')
 			const message =
 				error instanceof Error ? error.message : 'Something went wrong while starting Lilac.'
 			setErrorMessage(message)
 		}
-	}, [ensureAudioContext, start, updateInstructions, updateVoice])
+	}, [ensureAudioContext, start])
 
 	useEffect(() => {
-		if (hasBootstrapped) return
-		setHasBootstrapped(true)
-		void beginSession()
+		cancelInitRef.current = false
+		let cancelled = false
+
+		const run = async () => {
+			if (cancelled) return
+			await beginSession()
+		}
+
+		void run()
 
 		return () => {
+			cancelled = true
+			cancelInitRef.current = true
 			startedRef.current = false
 			stop()
 			try {
@@ -189,7 +203,7 @@ export default function ToggleRealtime() {
 			} catch {}
 			audioContextRef.current = null
 		}
-	}, [beginSession, hasBootstrapped, stop])
+	}, [beginSession, stop])
 
 	const statusText = useMemo(() => {
 		if (connectionState === 'requesting') return 'Requesting microphone…'
@@ -214,34 +228,36 @@ export default function ToggleRealtime() {
 	const phrase = languageOrder[activeIndex] ?? languageOrder[0]
 
 	return (
-		<div className="relative flex min-h-svh flex-col overflow-hidden">
-			<div className="pointer-events-none absolute inset-0 bg-[radial-gradient(120%_120%_at_50%_15%,rgba(255,255,255,0.9)_0%,rgba(247,243,231,1)_55%,rgba(206,190,255,0.6)_100%)] dark:bg-[radial-gradient(120%_120%_at_50%_15%,rgba(40,31,61,0.9)_0%,rgba(24,18,38,1)_60%,rgba(89,70,120,0.65)_100%)]" />
-			<div className="relative z-10 flex flex-1 flex-col">
-				<header className="flex items-center justify-between px-6 pt-12 pb-10 font-medium text-[var(--lilac-ink-muted)] text-sm tracking-wide">
-					<span className="uppercase">Lilac</span>
-					<span className="font-normal text-xs">next generation translator</span>
-				</header>
-				<div className="flex flex-1 items-center justify-center px-6">
-					<div className="rounded-3xl border border-white/30 bg-white/40 px-6 py-8 text-center shadow-[0_24px_80px_rgba(130,109,181,0.25)] backdrop-blur-lg transition-colors dark:border-white/10 dark:bg-white/5 dark:shadow-[0_24px_80px_rgba(40,30,70,0.45)]">
-						<AnimatePresence mode="wait">
-							<motion.span
-								key={phrase?.code ?? 'fallback'}
-								animate={{ opacity: 1, y: 0 }}
-								className="block font-semibold text-3xl text-[var(--lilac-ink)] tracking-tight sm:text-4xl"
-								exit={{ opacity: 0, y: 16 }}
-								initial={{ opacity: 0, y: -16 }}
-								transition={{ duration: 0.85, ease: 'easeInOut' }}
-							>
-								{phrase?.text ?? 'Introduce yourself'}
-							</motion.span>
-						</AnimatePresence>
-					</div>
-				</div>
-				<footer className="flex items-center justify-between px-6 pb-12 text-[var(--lilac-ink-muted)] text-xs">
-					<span>human-first, always on</span>
-					<span className="font-medium uppercase tracking-[0.2em]">{statusText}</span>
-				</footer>
+		<div className="relative box-border flex h-svh flex-col overflow-hidden">
+			<div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(220%_200%_at_50%_-12%,rgba(255,255,255,0.95)_0%,rgba(247,243,231,0.98)_48%,rgba(247,243,231,1)_72%,rgba(206,190,255,0.6)_100%)] dark:bg-[radial-gradient(220%_200%_at_50%_-12%,rgba(40,31,61,0.95)_0%,rgba(24,18,38,0.98)_50%,rgba(24,18,38,1)_74%,rgba(89,70,120,0.65)_100%)]" />
+			<div className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[28dvh] bg-gradient-to-b from-white/65 via-transparent to-transparent dark:from-[#2d2248]/60 dark:via-transparent" />
+			<div className="pointer-events-none absolute inset-x-0 bottom-0 -z-10 h-[32dvh] bg-gradient-to-t from-[var(--lilac-surface)] via-transparent to-transparent dark:from-[#120c1e] dark:via-transparent" />
+			<header
+				className="absolute left-0 right-0 z-10 flex justify-start px-6 text-sm font-medium uppercase tracking-wide text-[var(--lilac-ink-muted)]"
+				style={{ top: 'calc(env(safe-area-inset-top, 0px) + 1.75rem)' }}
+			>
+				<span>Lilac</span>
+			</header>
+			<div className="relative z-10 flex flex-1 items-center justify-center px-6 text-center">
+				<AnimatePresence mode="wait">
+					<motion.span
+						key={phrase?.code ?? 'fallback'}
+						animate={{ opacity: 1, y: 0 }}
+						className="block text-3xl font-semibold tracking-tight text-[var(--lilac-ink)] sm:text-4xl"
+						exit={{ opacity: 0, y: 16 }}
+						initial={{ opacity: 0, y: -16 }}
+						transition={{ duration: 0.85, ease: 'easeInOut' }}
+					>
+						{phrase?.text ?? 'Introduce yourself'}
+					</motion.span>
+				</AnimatePresence>
 			</div>
+			<footer
+				className="absolute left-0 right-0 z-10 flex justify-center px-6 text-xs font-medium uppercase tracking-[0.2em] text-[var(--lilac-ink-muted)]"
+				style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 2rem)' }}
+			>
+				<span>{statusText}</span>
+			</footer>
 		</div>
 	)
 }
