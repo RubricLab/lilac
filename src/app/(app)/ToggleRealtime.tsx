@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { useRealtimeVoiceSession } from '@/realtime/provider'
 
@@ -15,7 +15,7 @@ export default function ToggleRealtime() {
 	const audioContextRef = useRef<AudioContext | null>(null)
 	const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null)
 
-	const ensureAudioContext = () => {
+	const ensureAudioContext = useCallback(() => {
 		const Ctx =
 			window.AudioContext ??
 			(window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
@@ -27,7 +27,7 @@ export default function ToggleRealtime() {
 		void audioContextRef.current.resume().then(() => {
 			console.log('[toggle] AudioContext resumed', { state: audioContextRef.current?.state })
 		})
-	}
+	}, [])
 
 	useEffect(() => {
 		console.log('[toggle] remoteStream updated', {
@@ -89,7 +89,7 @@ export default function ToggleRealtime() {
 		} else {
 			stop()
 		}
-	}, [enabled, prompt, voice, start, stop])
+	}, [enabled, prompt, voice, start, stop, ensureAudioContext])
 
 	useEffect(() => {
 		if (!enabled) return

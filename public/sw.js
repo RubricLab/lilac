@@ -3,7 +3,7 @@
 
 self.addEventListener('install', _event => {
 	// Activate new SW immediately
-	// @ts-ignore
+	// @ts-expect-error
 	self.skipWaiting?.()
 })
 
@@ -11,7 +11,7 @@ self.addEventListener('activate', event => {
 	event.waitUntil(
 		Promise.all([
 			// Claim clients so this version takes effect right away
-			// @ts-ignore
+			// @ts-expect-error
 			self.clients?.claim?.(),
 			// Remove any caches left by previous versions
 			caches

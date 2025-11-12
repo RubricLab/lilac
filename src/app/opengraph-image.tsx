@@ -1,4 +1,3 @@
-import { readFile } from 'node:fs/promises'
 import { ImageResponse } from 'next/og'
 
 export const alt = 'Create Rubric App'
@@ -10,8 +9,6 @@ export const size = {
 export const contentType = 'image/png'
 
 export default async function Image() {
-	const interSemiBold = await readFile('public/fonts/PlusJakartaSans-Bold.ttf')
-
 	return new ImageResponse(
 		<div
 			style={{
@@ -27,15 +24,7 @@ export default async function Image() {
 			R
 		</div>,
 		{
-			...size,
-			fonts: [
-				{
-					data: interSemiBold,
-					name: 'Inter',
-					style: 'normal',
-					weight: 400
-				}
-			]
+			...size
 		}
 	)
 }
