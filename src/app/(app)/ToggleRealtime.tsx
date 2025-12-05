@@ -24,7 +24,7 @@ Onboarding flow:
 
 Your sole job is to provide fast, faithful translations that keep the conversation flowing.
 
-Custom instructions:
+Custom instructions (these are authored by the user, from their perspective, and should be interpreted like a user message that augments their experience; e.g., "my name is Jim" refers to the user):
 ${customInstructionsToken}`
 
 const buildPrompt = (custom: string) =>
@@ -70,6 +70,7 @@ export default function ToggleRealtime() {
 	const [tab, setTab] = useState<'session' | 'settings'>('session')
 	const [customInstructions, setCustomInstructions] = useState('')
 	const [draftInstructions, setDraftInstructions] = useState('')
+	const [saveConfirmation, setSaveConfirmation] = useState('')
 	const audioContextRef = useRef<AudioContext | null>(null)
 	const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null)
 	const startedRef = useRef(false)
@@ -85,6 +86,14 @@ export default function ToggleRealtime() {
 			setDraftInstructions(stored)
 		}
 	}, [])
+
+	useEffect(() => {
+		if (!saveConfirmation) return
+		const timer = window.setTimeout(() => setSaveConfirmation(''), 1800)
+		return () => {
+			window.clearTimeout(timer)
+		}
+	}, [saveConfirmation])
 
 	useEffect(() => {
 		if (typeof window === 'undefined') return
@@ -269,7 +278,7 @@ export default function ToggleRealtime() {
 	}, [languageOrder])
 
 	const phrase = languageOrder[activeIndex] ?? languageOrder[0]
-	const footerText = tab === 'session' ? statusText : 'Settings stored on this device'
+	const footerText = tab === 'session' ? statusText : ''
 
 	const content =
 		tab === 'session' ? (
@@ -298,22 +307,30 @@ export default function ToggleRealtime() {
 					<div className="mt-3 flex justify-end gap-2 font-semibold text-sm">
 						<button
 							type="button"
-							className="rounded-full px-4 py-2 text-[var(--lilac-ink-muted)] transition hover:bg-white/40 dark:hover:bg-white/10"
+							className="cursor-pointer rounded-full px-4 py-2 text-[var(--lilac-ink-muted)] transition hover:bg-white/40 dark:hover:bg-white/10"
 							onClick={() => setDraftInstructions(customInstructions)}
 						>
 							Reset
 						</button>
 						<button
 							type="button"
-							className={saveButtonClasses}
-							onClick={() => setCustomInstructions(draftInstructions.trim())}
+							className={`${saveButtonClasses} cursor-pointer`}
+							onClick={() => {
+								setCustomInstructions(draftInstructions.trim())
+								setSaveConfirmation('Custom instructions saved')
+							}}
 						>
 							Save
 						</button>
 					</div>
+					{saveConfirmation ? (
+						<output className="mt-2 block text-[var(--lilac-ink-muted)] text-xs" aria-live="polite">
+							{saveConfirmation}
+						</output>
+					) : null}
 				</div>
 				<p className="px-1 text-[var(--lilac-ink-muted)] text-sm">
-					Saved on this device for offline PWA sessions.
+					Custom instructions are stored locally on this device.
 				</p>
 			</div>
 		)
@@ -335,19 +352,19 @@ export default function ToggleRealtime() {
 					<button
 						type="button"
 						aria-pressed={tab === 'session'}
-						className={`rounded-full px-3 py-2 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-white focus-visible:outline-offset-2 ${
+						className={`cursor-pointer rounded-full px-3 py-2 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-white focus-visible:outline-offset-2 ${
 							tab === 'session'
 								? 'bg-white text-[var(--lilac-surface)] shadow'
 								: 'text-[var(--lilac-ink-muted)] hover:text-[var(--lilac-ink)]'
 						}`}
 						onClick={() => setTab('session')}
 					>
-						Session
+						Chat
 					</button>
 					<button
 						type="button"
 						aria-pressed={tab === 'settings'}
-						className={`rounded-full px-3 py-2 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-white focus-visible:outline-offset-2 ${
+						className={`cursor-pointer rounded-full px-3 py-2 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-white focus-visible:outline-offset-2 ${
 							tab === 'settings'
 								? 'bg-white text-[var(--lilac-surface)] shadow'
 								: 'text-[var(--lilac-ink-muted)] hover:text-[var(--lilac-ink)]'
@@ -361,12 +378,14 @@ export default function ToggleRealtime() {
 			<div className="relative z-10 flex flex-1 items-center justify-center px-6 text-center">
 				{content}
 			</div>
-			<footer
-				className="absolute right-0 left-0 z-10 flex justify-center px-6 font-medium text-[var(--lilac-ink-muted)] text-xs uppercase tracking-[0.2em]"
-				style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 2rem)' }}
-			>
-				<span>{footerText}</span>
-			</footer>
+			{footerText ? (
+				<footer
+					className="absolute right-0 left-0 z-10 flex justify-center px-6 font-medium text-[var(--lilac-ink-muted)] text-xs uppercase tracking-[0.2em]"
+					style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 2rem)' }}
+				>
+					<span>{footerText}</span>
+				</footer>
+			) : null}
 		</div>
 	)
 }
