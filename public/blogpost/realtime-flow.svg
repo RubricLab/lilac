@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="360" viewBox="0 0 720 360" role="img" aria-label="Realtime audio call flow">
+  <rect width="720" height="360" fill="#0b1221" rx="12" />
+  <g fill="#e0ecff" font-family="'Inter', system-ui, -apple-system" font-size="16" font-weight="600">
+    <text x="70" y="60">Client</text>
+    <text x="310" y="60">Rubric app</text>
+    <text x="550" y="60">OpenAI realtime</text>
+  </g>
+  <g stroke="#9cc2ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <rect x="40" y="30" width="140" height="280" rx="16" />
+    <rect x="280" y="30" width="160" height="280" rx="16" />
+    <rect x="520" y="30" width="160" height="280" rx="16" />
+    <path d="M180 110 C 230 110, 230 110, 280 110" />
+    <path d="M440 140 C 480 140, 480 140, 520 140" />
+    <path d="M520 190 C 480 190, 480 190, 440 190" />
+    <path d="M280 220 C 230 220, 230 220, 180 220" />
+  </g>
+  <g fill="#9cc2ff" font-family="'Inter', system-ui, -apple-system" font-size="14">
+    <text x="195" y="105">start()</text>
+    <text x="335" y="135">POST /realtime/sessions</text>
+    <text x="550" y="135">create session</text>
+    <text x="445" y="185">SDP answer</text>
+    <text x="210" y="215">Audio + events</text>
+  </g>
+  <g fill="#8ef3c5" font-family="'Inter', system-ui, -apple-system" font-size="13">
+    <text x="70" y="120">getUserMedia()</text>
+    <text x="70" y="140">WebRTC offer</text>
+    <text x="70" y="160">Data channel (oai-events)</text>
+    <text x="320" y="260">session.update (voice, instructions)</text>
+  </g>
+</svg>
