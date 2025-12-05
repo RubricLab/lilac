@@ -313,13 +313,17 @@ export default function ToggleRealtime() {
 				style={{ top: 'calc(env(safe-area-inset-top, 0px) + 1.75rem)' }}
 			>
 				<span>Lilac</span>
-				<div className="flex rounded-full bg-[var(--lilac-elevated)] p-1 font-semibold text-xs uppercase tracking-[0.08em] shadow-sm backdrop-blur">
+				<div
+					className="flex rounded-full bg-[var(--lilac-elevated)] p-1 font-semibold text-xs uppercase tracking-[0.08em] shadow-sm backdrop-blur"
+					role="tablist"
+				>
 					<button
 						type="button"
-						className={`rounded-full px-3 py-2 transition ${
+						aria-pressed={tab === 'session'}
+						className={`rounded-full px-3 py-2 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-white focus-visible:outline-offset-2 ${
 							tab === 'session'
-								? 'bg-white/80 text-[var(--lilac-ink)] shadow'
-								: 'text-[var(--lilac-ink-muted)]'
+								? 'bg-white text-[var(--lilac-surface)] shadow'
+								: 'text-[var(--lilac-ink-muted)] hover:text-[var(--lilac-ink)]'
 						}`}
 						onClick={() => setTab('session')}
 					>
@@ -327,10 +331,11 @@ export default function ToggleRealtime() {
 					</button>
 					<button
 						type="button"
-						className={`rounded-full px-3 py-2 transition ${
+						aria-pressed={tab === 'settings'}
+						className={`rounded-full px-3 py-2 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-white focus-visible:outline-offset-2 ${
 							tab === 'settings'
-								? 'bg-white/80 text-[var(--lilac-ink)] shadow'
-								: 'text-[var(--lilac-ink-muted)]'
+								? 'bg-white text-[var(--lilac-surface)] shadow'
+								: 'text-[var(--lilac-ink-muted)] hover:text-[var(--lilac-ink)]'
 						}`}
 						onClick={() => setTab('settings')}
 					>
