@@ -45,6 +45,21 @@ const languagePhrases = [
 	{ code: 'it', text: 'Presentati' }
 ]
 
+const saveButtonClasses = [
+	'bg-[var(--lilac-ink)]',
+	'focus-visible:outline',
+	'focus-visible:outline-2',
+	'focus-visible:outline-offset-2',
+	'focus-visible:outline-white',
+	'hover:shadow-lg',
+	'px-4',
+	'py-2',
+	'rounded-full',
+	'shadow-md',
+	'text-[var(--lilac-surface)]',
+	'transition'
+].join(' ')
+
 type ConnectionState = 'idle' | 'requesting' | 'ready' | 'error'
 
 export default function ToggleRealtime() {
@@ -275,7 +290,7 @@ export default function ToggleRealtime() {
 				<div className="rounded-3xl border border-white/30 bg-[var(--lilac-elevated)] p-5 text-[var(--lilac-ink)] shadow-xl backdrop-blur">
 					<div className="mb-3 font-semibold text-base tracking-tight">Custom instructions</div>
 					<textarea
-						className="h-40 w-full resize-none rounded-2xl border border-white/30 bg-white/70 px-4 py-3 text-[var(--lilac-ink)] text-base outline-none ring-0 transition focus:border-white/60 focus:bg-white/90 dark:bg-white/10"
+						className="h-40 w-full resize-none rounded-2xl border border-white/30 bg-white/70 px-4 py-3 text-[var(--lilac-ink)] text-base outline-none ring-0 transition focus:border-white/70 focus:bg-white dark:bg-white/10 dark:focus:border-white/30 dark:focus:bg-white/20"
 						onChange={event => setDraftInstructions(event.target.value)}
 						placeholder="Tell Lilac how to behave."
 						value={draftInstructions}
@@ -290,7 +305,7 @@ export default function ToggleRealtime() {
 						</button>
 						<button
 							type="button"
-							className="rounded-full bg-[var(--lilac-ink)] px-4 py-2 text-white shadow-md transition hover:shadow-lg"
+							className={saveButtonClasses}
 							onClick={() => setCustomInstructions(draftInstructions.trim())}
 						>
 							Save
@@ -309,7 +324,7 @@ export default function ToggleRealtime() {
 			<div className="-z-10 pointer-events-none absolute inset-x-0 top-0 h-[28dvh] bg-gradient-to-b from-white/65 via-transparent to-transparent dark:from-[#2d2248]/60 dark:via-transparent" />
 			<div className="-z-10 pointer-events-none absolute inset-x-0 bottom-0 h-[32dvh] bg-gradient-to-t from-[var(--lilac-surface)] via-transparent to-transparent dark:from-[#120c1e] dark:via-transparent" />
 			<header
-				className="absolute right-0 left-0 z-10 flex items-center justify-between px-6 font-medium text-[var(--lilac-ink-muted)] text-sm uppercase tracking-wide"
+				className="absolute right-0 left-0 z-20 flex items-center justify-between px-6 font-medium text-[var(--lilac-ink-muted)] text-sm uppercase tracking-wide"
 				style={{ top: 'calc(env(safe-area-inset-top, 0px) + 1.75rem)' }}
 			>
 				<span>Lilac</span>
