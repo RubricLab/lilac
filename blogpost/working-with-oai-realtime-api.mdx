@@ -1,0 +1,117 @@
+import Image from 'next/image'
+
+# Working with OAI realtime API
+
+We built Lilac with the same energy as a weekend side project: small, punchy, and relentlessly practical. The Realtime API fit that vibe—faster than a request/response loop, flexible enough for wild prompts, and perfectly happy living inside Rubric’s type-safe scaffolding.
+
+<Image src="/blogpost/realtime-flow.svg" alt="Realtime data flow" width={720} height={360} />
+
+## Why we ditched traditional translation
+
+Google Translate did a decent job with menus, but it missed nuance in conversation. Long turns collapsed into blunt summaries, back-channels were dropped, and code-switched phrases came back awkward. After a few rough evenings trying to chat with a friend in Teochew, we moved to realtime streaming so the model could hear every pause and respond with voice that felt human.
+
+## Three real-world workflows
+
+- **Dexter + a friend:** They hand the phone back and forth. Dexter speaks English, the model speaks Teochew back. The low-latency handoff keeps the conversation flowing instead of waiting on transcripts.
+- **Ted, the self-learner:** He talks to himself in a target language, asking the model to correct or rephrase in-line. The data channel keeps corrections visible without interrupting audio.
+- **Dexter’s friend, custom dialect:** She uploaded Teochew pronunciation notes as custom instructions so the session tunes Mandarin defaults toward her dialect. Because the instructions live in the session payload, she can tweak the accent without redeploying code.
+
+## How it works in Lilac
+
+1. **Typed session creation.** On the server we post to `POST /v1/realtime/sessions`, validated with Zod and the Rubric env helper so the API key never leaks into the client. The helper returns a short-lived client secret we can safely use in the browser.
+2. **WebRTC handshake.** On the client we open the microphone, create a data channel (`oai-events`), send a WebRTC offer, and swap SDP with the Realtime endpoint. Once the answer arrives, audio and events flow in both directions.
+3. **Live session updates.** After the data channel opens we push `session.update` messages to change instructions or voices without restarting the call. That’s how we can swap between a learning-first persona and a translation-first persona mid-conversation.
+
+### Server: creating a session
+
+```ts
+import { z } from 'zod'
+import env from '~/env'
+
+const RealtimeSessionSchema = z.object({
+  client_secret: z.object({
+    expires_at: z.number(),
+    value: z.string(),
+  }),
+  expires_at: z.number().optional(),
+  id: z.string(),
+  model: z.string(),
+})
+
+export async function createRealtimeSession(input?: CreateRealtimeSessionInput) {
+  const { model, voice, instructions } = CreateSessionInputSchema.parse(input ?? {})
+
+  const response = await fetch('https://api.openai.com/v1/realtime/sessions', {
+    body: JSON.stringify({ model, voice, ...(instructions ? { instructions } : {}) }),
+    headers: {
+      Authorization: `Bearer ${env.OPENAI_API_KEY}`,
+      'Content-Type': 'application/json',
+      'OpenAI-Beta': 'realtime=v1',
+    },
+    method: 'POST',
+  })
+
+  if (!response.ok) throw new Error(await response.text())
+  return RealtimeSessionSchema.parse(await response.json())
+}
+```
+
+The `CreateSessionInputSchema` sets defaults for the `model` (`gpt-realtime`) and `voice` (`verse`) while keeping `instructions` optional for quick experiments. Zod keeps the payload honest and tight.
+
+### Client: handshaking and updating instructions
+
+```tsx
+const session = await createRealtimeSession({
+  instructions: 'Stay concise and prefer Teochew over Mandarin.',
+  model: 'gpt-realtime',
+  voice: 'verse',
+})
+const clientSecret = session.client_secret.value
+const peer = new RTCPeerConnection()
+const mic = await navigator.mediaDevices.getUserMedia({ audio: true })
+for (const track of mic.getTracks()) peer.addTrack(track, mic)
+
+const dataChannel = peer.createDataChannel('oai-events')
+dataChannel.addEventListener('open', () => {
+  dataChannel.send(
+    JSON.stringify({
+      session: { voice: 'verse', instructions: 'Teochew first, Mandarin fallback.' },
+      type: 'session.update',
+    }),
+  )
+})
+
+const offer = await peer.createOffer()
+await peer.setLocalDescription(offer)
+const answer = await fetch(
+  `https://api.openai.com/v1/realtime?model=${encodeURIComponent(session.model)}`,
+  {
+    body: offer.sdp ?? '',
+    headers: {
+      Authorization: `Bearer ${clientSecret}`,
+      'Content-Type': 'application/sdp',
+      'OpenAI-Beta': 'realtime=v1',
+    },
+    method: 'POST',
+  },
+).then(res => res.text())
+await peer.setRemoteDescription({ sdp: answer, type: 'answer' })
+```
+
+Once connected, `session.update` keeps the conversation adaptable: change the voice for role-play, swap instructions to prioritize correction over translation, or add new dialect notes mid-call.
+
+## Using Rubric to ship fast (and safe)
+
+- **Bootstrapped with `create-rubric-app`.** The repo already wires Next.js, TypeScript, Zod, and Biome together, so we only needed to add realtime specifics.
+- **Environment discipline.** `OPENAI_API_KEY` is required server-side; Rubric’s env helper strips it from the client bundle.
+- **Type propagation.** Zod schemas back every API call so the client only sees validated shapes—no more guessing at session fields.
+- **One-command spins.** `bun i`, `bun db:push`, and `bun dev` are enough to get a teammate running.
+
+## Tips from the trenches
+
+- Keep instructions short; long paragraphs slow down first tokens.
+- Prefer `session.update` over tearing down a call when changing languages.
+- Log `icecandidate` and `connectionstatechange` during development—they reveal most connectivity issues.
+- Store dialect notes as versioned documents so friends can share or roll back experiments.
+
+Lilac is intentionally lightweight, but with the Realtime API and Rubric’s scaffolding we get a production-grade conversation loop that still feels hackable. Give it a try, tweak the instructions for your dialect, and let us know what you build.
