@@ -5,6 +5,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { useRealtimeVoiceSession } from '@/realtime/provider'
 
+const customInstructionsToken = '{{CUSTOM_INSTRUCTIONS}}'
+
 const defaultPrompt = `You are Lilac, a human-first translation facilitator.
 
 Core principles:
@@ -20,7 +22,13 @@ Onboarding flow:
 5. Do not teach, embellish, or comment on the content of the conversation. Translate faithfully and efficiently.
 6. If you cannot determine a speaker's language, politely ask them—in your best guess of their language—to clarify.
 
-Your sole job is to provide fast, faithful translations that keep the conversation flowing.`
+Your sole job is to provide fast, faithful translations that keep the conversation flowing.
+
+Custom instructions (these are authored by the user, from their perspective, and should be interpreted like a user message that augments their experience; e.g., "my name is Jim" refers to the user):
+${customInstructionsToken}`
+
+const buildPrompt = (custom: string) =>
+	defaultPrompt.replace(customInstructionsToken, custom.trim() || 'None provided.')
 
 const languagePhrases = [
 	{ code: 'en', text: 'Introduce yourself' },
@@ -37,17 +45,61 @@ const languagePhrases = [
 	{ code: 'it', text: 'Presentati' }
 ]
 
+const saveButtonClasses = [
+	'bg-[var(--lilac-ink)]',
+	'focus-visible:outline',
+	'focus-visible:outline-2',
+	'focus-visible:outline-offset-2',
+	'focus-visible:outline-white',
+	'hover:shadow-lg',
+	'px-4',
+	'py-2',
+	'rounded-full',
+	'shadow-md',
+	'text-[var(--lilac-surface)]',
+	'transition'
+].join(' ')
+
 type ConnectionState = 'idle' | 'requesting' | 'ready' | 'error'
 
 export default function ToggleRealtime() {
-	const { start, stop, remoteStream } = useRealtimeVoiceSession()
+	const { start, stop, remoteStream, updateInstructions } = useRealtimeVoiceSession()
 	const [connectionState, setConnectionState] = useState<ConnectionState>('idle')
 	const [errorMessage, setErrorMessage] = useState<string | null>(null)
 	const [languageOrder, setLanguageOrder] = useState(languagePhrases)
+	const [tab, setTab] = useState<'session' | 'settings'>('session')
+	const [customInstructions, setCustomInstructions] = useState('')
+	const [draftInstructions, setDraftInstructions] = useState('')
+	const [saveConfirmation, setSaveConfirmation] = useState('')
 	const audioContextRef = useRef<AudioContext | null>(null)
 	const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null)
 	const startedRef = useRef(false)
 	const cancelInitRef = useRef(false)
+
+	const instructionsText = useMemo(() => buildPrompt(customInstructions), [customInstructions])
+
+	useEffect(() => {
+		if (typeof window === 'undefined') return
+		const stored = window.localStorage.getItem('lilac.customInstructions')
+		if (stored !== null) {
+			setCustomInstructions(stored)
+			setDraftInstructions(stored)
+		}
+	}, [])
+
+	useEffect(() => {
+		if (!saveConfirmation) return
+		const timer = window.setTimeout(() => setSaveConfirmation(''), 1800)
+		return () => {
+			window.clearTimeout(timer)
+		}
+	}, [saveConfirmation])
+
+	useEffect(() => {
+		if (typeof window === 'undefined') return
+		window.localStorage.setItem('lilac.customInstructions', customInstructions)
+		updateInstructions(instructionsText)
+	}, [customInstructions, instructionsText, updateInstructions])
 
 	useEffect(() => {
 		if (typeof navigator === 'undefined') return
@@ -161,7 +213,7 @@ export default function ToggleRealtime() {
 
 		try {
 			ensureAudioContext()
-			await start({ instructions: defaultPrompt, voice: 'verse' })
+			await start({ instructions: instructionsText, voice: 'verse' })
 			if (cancelInitRef.current) {
 				startedRef.current = false
 				return
@@ -176,7 +228,7 @@ export default function ToggleRealtime() {
 				error instanceof Error ? error.message : 'Something went wrong while starting Lilac.'
 			setErrorMessage(message)
 		}
-	}, [ensureAudioContext, start])
+	}, [ensureAudioContext, start, instructionsText])
 
 	useEffect(() => {
 		cancelInitRef.current = false
@@ -226,38 +278,114 @@ export default function ToggleRealtime() {
 	}, [languageOrder])
 
 	const phrase = languageOrder[activeIndex] ?? languageOrder[0]
+	const footerText = tab === 'session' ? statusText : ''
+
+	const content =
+		tab === 'session' ? (
+			<AnimatePresence mode="wait">
+				<motion.span
+					key={phrase?.code ?? 'fallback'}
+					animate={{ opacity: 1, y: 0 }}
+					className="block font-semibold text-3xl text-[var(--lilac-ink)] tracking-tight sm:text-4xl"
+					exit={{ opacity: 0, y: 16 }}
+					initial={{ opacity: 0, y: -16 }}
+					transition={{ duration: 0.85, ease: 'easeInOut' }}
+				>
+					{phrase?.text ?? 'Introduce yourself'}
+				</motion.span>
+			</AnimatePresence>
+		) : (
+			<div className="flex w-full max-w-xl flex-col gap-4 text-left">
+				<div className="rounded-3xl border border-white/30 bg-[var(--lilac-elevated)] p-5 text-[var(--lilac-ink)] shadow-xl backdrop-blur">
+					<div className="mb-3 font-semibold text-base tracking-tight">Custom instructions</div>
+					<textarea
+						className="h-40 w-full resize-none rounded-2xl border border-white/30 bg-white/70 px-4 py-3 text-[var(--lilac-ink)] text-base outline-none ring-0 transition focus:border-white/70 focus:bg-white dark:bg-white/10 dark:focus:border-white/30 dark:focus:bg-white/20"
+						onChange={event => setDraftInstructions(event.target.value)}
+						placeholder="Tell Lilac how to behave."
+						value={draftInstructions}
+					/>
+					<div className="mt-3 flex justify-end gap-2 font-semibold text-sm">
+						<button
+							type="button"
+							className="cursor-pointer rounded-full px-4 py-2 text-[var(--lilac-ink-muted)] transition hover:bg-white/40 dark:hover:bg-white/10"
+							onClick={() => setDraftInstructions(customInstructions)}
+						>
+							Reset
+						</button>
+						<button
+							type="button"
+							className={`${saveButtonClasses} cursor-pointer`}
+							onClick={() => {
+								setCustomInstructions(draftInstructions.trim())
+								setSaveConfirmation('Custom instructions saved')
+							}}
+						>
+							Save
+						</button>
+					</div>
+					{saveConfirmation ? (
+						<output className="mt-2 block text-[var(--lilac-ink-muted)] text-xs" aria-live="polite">
+							{saveConfirmation}
+						</output>
+					) : null}
+				</div>
+				<p className="px-1 text-[var(--lilac-ink-muted)] text-sm">
+					Custom instructions are stored locally on this device.
+				</p>
+			</div>
+		)
 
 	return (
 		<div className="relative box-border flex h-svh flex-col overflow-hidden">
-			<div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(220%_200%_at_50%_-12%,rgba(255,255,255,0.95)_0%,rgba(247,243,231,0.98)_48%,rgba(247,243,231,1)_72%,rgba(206,190,255,0.6)_100%)] dark:bg-[radial-gradient(220%_200%_at_50%_-12%,rgba(40,31,61,0.95)_0%,rgba(24,18,38,0.98)_50%,rgba(24,18,38,1)_74%,rgba(89,70,120,0.65)_100%)]" />
-			<div className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[28dvh] bg-gradient-to-b from-white/65 via-transparent to-transparent dark:from-[#2d2248]/60 dark:via-transparent" />
-			<div className="pointer-events-none absolute inset-x-0 bottom-0 -z-10 h-[32dvh] bg-gradient-to-t from-[var(--lilac-surface)] via-transparent to-transparent dark:from-[#120c1e] dark:via-transparent" />
+			<div className="-z-10 pointer-events-none absolute inset-0 bg-[radial-gradient(220%_200%_at_50%_-12%,rgba(255,255,255,0.95)_0%,rgba(247,243,231,0.98)_48%,rgba(247,243,231,1)_72%,rgba(206,190,255,0.6)_100%)] dark:bg-[radial-gradient(220%_200%_at_50%_-12%,rgba(40,31,61,0.95)_0%,rgba(24,18,38,0.98)_50%,rgba(24,18,38,1)_74%,rgba(89,70,120,0.65)_100%)]" />
+			<div className="-z-10 pointer-events-none absolute inset-x-0 top-0 h-[28dvh] bg-gradient-to-b from-white/65 via-transparent to-transparent dark:from-[#2d2248]/60 dark:via-transparent" />
+			<div className="-z-10 pointer-events-none absolute inset-x-0 bottom-0 h-[32dvh] bg-gradient-to-t from-[var(--lilac-surface)] via-transparent to-transparent dark:from-[#120c1e] dark:via-transparent" />
 			<header
-				className="absolute left-0 right-0 z-10 flex justify-start px-6 text-sm font-medium uppercase tracking-wide text-[var(--lilac-ink-muted)]"
+				className="absolute right-0 left-0 z-20 flex items-center justify-between px-6 font-medium text-[var(--lilac-ink-muted)] text-sm uppercase tracking-wide"
 				style={{ top: 'calc(env(safe-area-inset-top, 0px) + 1.75rem)' }}
 			>
 				<span>Lilac</span>
+				<div
+					className="flex rounded-full bg-[var(--lilac-elevated)] p-1 font-semibold text-xs uppercase tracking-[0.08em] shadow-sm backdrop-blur"
+					role="tablist"
+				>
+					<button
+						type="button"
+						aria-pressed={tab === 'session'}
+						className={`cursor-pointer rounded-full px-3 py-2 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-white focus-visible:outline-offset-2 ${
+							tab === 'session'
+								? 'bg-white text-[var(--lilac-surface)] shadow'
+								: 'text-[var(--lilac-ink-muted)] hover:text-[var(--lilac-ink)]'
+						}`}
+						onClick={() => setTab('session')}
+					>
+						Chat
+					</button>
+					<button
+						type="button"
+						aria-pressed={tab === 'settings'}
+						className={`cursor-pointer rounded-full px-3 py-2 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-white focus-visible:outline-offset-2 ${
+							tab === 'settings'
+								? 'bg-white text-[var(--lilac-surface)] shadow'
+								: 'text-[var(--lilac-ink-muted)] hover:text-[var(--lilac-ink)]'
+						}`}
+						onClick={() => setTab('settings')}
+					>
+						Settings
+					</button>
+				</div>
 			</header>
 			<div className="relative z-10 flex flex-1 items-center justify-center px-6 text-center">
-				<AnimatePresence mode="wait">
-					<motion.span
-						key={phrase?.code ?? 'fallback'}
-						animate={{ opacity: 1, y: 0 }}
-						className="block text-3xl font-semibold tracking-tight text-[var(--lilac-ink)] sm:text-4xl"
-						exit={{ opacity: 0, y: 16 }}
-						initial={{ opacity: 0, y: -16 }}
-						transition={{ duration: 0.85, ease: 'easeInOut' }}
-					>
-						{phrase?.text ?? 'Introduce yourself'}
-					</motion.span>
-				</AnimatePresence>
+				{content}
 			</div>
-			<footer
-				className="absolute left-0 right-0 z-10 flex justify-center px-6 text-xs font-medium uppercase tracking-[0.2em] text-[var(--lilac-ink-muted)]"
-				style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 2rem)' }}
-			>
-				<span>{statusText}</span>
-			</footer>
+			{footerText ? (
+				<footer
+					className="absolute right-0 left-0 z-10 flex justify-center px-6 font-medium text-[var(--lilac-ink-muted)] text-xs uppercase tracking-[0.2em]"
+					style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 2rem)' }}
+				>
+					<span>{footerText}</span>
+				</footer>
+			) : null}
 		</div>
 	)
 }
