@@ -24,8 +24,9 @@ Onboarding flow:
 
 Your sole job is to provide fast, faithful translations that keep the conversation flowing.
 
-Custom instructions (these are authored by the user, from their perspective, and should be interpreted like a user message that augments their experience; e.g., "my name is Jim" refers to the user):
-${customInstructionsToken}`
+Custom instructions (these are optionally added by the user in a settings UI to augment and personalize the experience):
+${customInstructionsToken}
+-- End custom instructions --`
 
 const buildPrompt = (custom: string) =>
 	defaultPrompt.replace(customInstructionsToken, custom.trim() || 'None provided.')
