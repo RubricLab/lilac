@@ -67,8 +67,16 @@ const saveButtonClasses = [
 type ConnectionState = 'idle' | 'requesting' | 'ready' | 'error'
 
 export default function ToggleRealtime() {
-	const { start, stop, remoteStream, transcripts, updateInstructions, updateTurnDelaySeconds } =
-		useRealtimeVoiceSession()
+	const {
+		start,
+		stop,
+		remoteStream,
+		transcripts,
+		updateInstructions,
+		updateTurnDelaySeconds,
+		updateSpeechEnabled,
+		sendText
+	} = useRealtimeVoiceSession()
 	const [connectionState, setConnectionState] = useState<ConnectionState>('idle')
 	const [errorMessage, setErrorMessage] = useState<string | null>(null)
 	const [languageOrder, setLanguageOrder] = useState(languagePhrases)
@@ -78,6 +86,8 @@ export default function ToggleRealtime() {
 	const [saveConfirmation, setSaveConfirmation] = useState('')
 	const [turnDelaySeconds, setTurnDelaySeconds] = useState(1.2)
 	const [turnDelayDraft, setTurnDelayDraft] = useState('1.2')
+	const [speechEnabled, setSpeechEnabled] = useState(true)
+	const [textDraft, setTextDraft] = useState('')
 	const audioContextRef = useRef<AudioContext | null>(null)
 	const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null)
 	const startedRef = useRef(false)
@@ -119,6 +129,13 @@ export default function ToggleRealtime() {
 	}, [normalizeTurnDelaySeconds])
 
 	useEffect(() => {
+		if (typeof window === 'undefined') return
+		const stored = window.localStorage.getItem('lilac.speechEnabled')
+		if (stored === null) return
+		setSpeechEnabled(stored !== 'false')
+	}, [])
+
+	useEffect(() => {
 		if (!saveConfirmation) return
 		const timer = window.setTimeout(() => setSaveConfirmation(''), 1800)
 		return () => {
@@ -137,6 +154,12 @@ export default function ToggleRealtime() {
 		window.localStorage.setItem('lilac.turnDelaySeconds', String(turnDelaySeconds))
 		updateTurnDelaySeconds(turnDelaySeconds)
 	}, [turnDelaySeconds, updateTurnDelaySeconds])
+
+	useEffect(() => {
+		if (typeof window === 'undefined') return
+		window.localStorage.setItem('lilac.speechEnabled', speechEnabled ? 'true' : 'false')
+		updateSpeechEnabled(speechEnabled)
+	}, [speechEnabled, updateSpeechEnabled])
 
 	useEffect(() => {
 		if (typeof navigator === 'undefined') return
@@ -206,6 +229,18 @@ export default function ToggleRealtime() {
 				tracks: remoteStream?.getTracks().length
 			})
 
+			if (!speechEnabled) {
+				try {
+					sourceRef.current?.disconnect()
+				} catch {}
+				sourceRef.current = null
+				try {
+					void audioContextRef.current?.close()
+				} catch {}
+				audioContextRef.current = null
+				return
+			}
+
 			if (!remoteStream.getAudioTracks().length) {
 				const onAddTrack = () => {
 					remoteStream.removeEventListener('addtrack', onAddTrack as EventListener)
@@ -240,7 +275,7 @@ export default function ToggleRealtime() {
 			} catch {}
 			audioContextRef.current = null
 		}
-	}, [remoteStream, ensureAudioContext])
+	}, [remoteStream, ensureAudioContext, speechEnabled])
 
 	const beginSession = useCallback(async () => {
 		if (startedRef.current) return
@@ -250,7 +285,10 @@ export default function ToggleRealtime() {
 
 		try {
 			ensureAudioContext()
-			await start({ instructions: instructionsText, voice: 'verse' })
+			await start({
+				instructions: instructionsText,
+				...(speechEnabled ? { voice: 'verse' } : {})
+			})
 			if (cancelInitRef.current) {
 				startedRef.current = false
 				return
@@ -265,7 +303,7 @@ export default function ToggleRealtime() {
 				error instanceof Error ? error.message : 'Something went wrong while starting Lilac.'
 			setErrorMessage(message)
 		}
-	}, [ensureAudioContext, start, instructionsText])
+	}, [ensureAudioContext, start, instructionsText, speechEnabled])
 
 	useEffect(() => {
 		cancelInitRef.current = false
@@ -319,6 +357,7 @@ export default function ToggleRealtime() {
 
 	const phrase = languageOrder[activeIndex] ?? languageOrder[0]
 	const footerText = tab === 'session' ? statusText : ''
+	const canSendText = textDraft.trim().length > 0
 
 	useEffect(() => {
 		const el = transcriptListRef.current
@@ -346,6 +385,62 @@ export default function ToggleRealtime() {
 	const content =
 		tab === 'session' ? (
 			<div className="flex w-full max-w-xl flex-col gap-4">
+				<div className="rounded-3xl border border-white/30 bg-[var(--lilac-elevated)]/80 p-4 text-[var(--lilac-ink)] shadow-xl backdrop-blur">
+					<div className="flex items-center justify-between gap-4">
+						<div className="flex flex-col">
+							<span className="font-semibold text-[10px] text-[var(--lilac-ink-muted)] uppercase tracking-[0.18em]">
+								Speech output
+							</span>
+							<span className="text-[var(--lilac-ink)] text-sm">
+								{speechEnabled ? 'Spoken replies enabled' : 'Text-only replies'}
+							</span>
+						</div>
+						<button
+							type="button"
+							role="switch"
+							aria-checked={speechEnabled}
+							onClick={() => setSpeechEnabled(enabled => !enabled)}
+							className={`relative h-8 w-14 rounded-full border transition ${
+								speechEnabled
+									? 'border-transparent bg-[var(--lilac-ink)]'
+									: 'border-white/40 bg-white/70 dark:bg-white/10'
+							}`}
+						>
+							<span
+								className={`-translate-y-1/2 absolute top-1/2 h-6 w-6 rounded-full bg-white shadow transition ${
+									speechEnabled ? 'translate-x-7' : 'translate-x-1'
+								}`}
+							/>
+						</button>
+					</div>
+					<div className="mt-4 flex flex-col gap-2">
+						<span className="font-semibold text-[10px] text-[var(--lilac-ink-muted)] uppercase tracking-[0.18em]">
+							Text input
+						</span>
+						<div className="flex flex-col gap-2 sm:flex-row">
+							<textarea
+								className="min-h-[72px] w-full flex-1 resize-none rounded-2xl border border-white/30 bg-white/70 px-4 py-3 text-[var(--lilac-ink)] text-sm outline-none transition focus:border-white/70 focus:bg-white dark:bg-white/10 dark:focus:border-white/30 dark:focus:bg-white/20"
+								onChange={event => setTextDraft(event.target.value)}
+								placeholder="Type to translate or speak back."
+								rows={2}
+								value={textDraft}
+							/>
+							<button
+								type="button"
+								className={`${saveButtonClasses} h-12 w-full cursor-pointer text-sm sm:w-28 ${
+									canSendText ? '' : 'cursor-not-allowed opacity-60'
+								}`}
+								disabled={!canSendText}
+								onClick={() => {
+									if (!sendText(textDraft)) return
+									setTextDraft('')
+								}}
+							>
+								Send
+							</button>
+						</div>
+					</div>
+				</div>
 				<div
 					ref={transcriptListRef}
 					className="h-[62dvh] overflow-y-auto rounded-3xl border border-white/30 bg-[var(--lilac-elevated)]/70 p-4 shadow-xl backdrop-blur"

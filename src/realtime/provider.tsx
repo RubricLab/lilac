@@ -16,7 +16,7 @@ export type RealtimeTranscriptMessage = {
 	 * - response_text: assistant text stream
 	 * - response_audio_transcript: assistant audio transcript stream
 	 */
-	source: 'input_transcription' | 'response_text' | 'response_audio_transcript'
+	source: 'input_transcription' | 'input_text' | 'response_text' | 'response_audio_transcript'
 }
 
 type RealtimeContextValue = {
@@ -27,6 +27,8 @@ type RealtimeContextValue = {
 	updateInstructions: (text: string) => void
 	updateVoice: (voice: string) => void
 	updateTurnDelaySeconds: (seconds: number) => void
+	updateSpeechEnabled: (enabled: boolean) => void
+	sendText: (text: string) => boolean
 	clearTranscripts: () => void
 	stop: () => void
 }
@@ -148,6 +150,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
 	const pendingAssistantDeltasByResponseIdRef = useRef<
 		Map<string, { text: string; audioTranscript: string }>
 	>(new Map())
+	const speechEnabledRef = useRef(true)
 
 	const cleanup = useCallback(() => {
 		peerRef.current?.close()
@@ -182,7 +185,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
 		(update: {
 			id: string
 			role: 'user' | 'assistant'
-			source: RealtimeTranscriptMessage['source']
+			source: RealtimeTranscriptMessage['source'] | 'input_text'
 			appendDelta?: string
 			replaceText?: string
 			finalize?: boolean
@@ -352,7 +355,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
 						dc.send(
 							JSON.stringify({
 								session: {
-									...(opts?.voice ? { voice: opts.voice } : {}),
+									...(speechEnabledRef.current && opts?.voice ? { voice: opts.voice } : {}),
 									...(opts?.instructions ? { instructions: opts.instructions } : {}),
 									audio: {
 										input: {
@@ -363,7 +366,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
 										}
 									},
 									// Request both audio and text so we can display a high-quality text timeline.
-									modalities: ['audio', 'text'],
+									modalities: speechEnabledRef.current ? ['audio', 'text'] : ['text'],
 									turn_detection: {
 										silence_duration_ms: silenceDurationMs,
 										type: 'server_vad'
@@ -448,6 +451,9 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
 							if (type === 'conversation.item.created') {
 								const itemId = typeof msg?.item?.id === 'string' ? msg.item.id : undefined
 								const role = msg?.item?.role
+								const content = Array.isArray(msg?.item?.content) ? msg.item.content : []
+								const inputText = content.find((entry: { type?: string }) => entry?.type === 'input_text')
+								const text = typeof inputText?.text === 'string' ? inputText.text : null
 								const previousItemId =
 									typeof msg?.previous_item_id === 'string'
 										? msg.previous_item_id
@@ -457,7 +463,18 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
 
 								if (typeof itemId === 'string') {
 									previousItemIdByIdRef.current.set(itemId, previousItemId)
-									if (role === 'user') latestCommittedInputItemIdRef.current = itemId
+									if (role === 'user') {
+										latestCommittedInputItemIdRef.current = itemId
+										if (text !== null) {
+											upsertTranscript({
+												id: itemId,
+												previousItemId,
+												replaceText: text,
+												role: 'user',
+												source: 'input_text'
+											})
+										}
+									}
 									reorderTranscripts()
 								}
 								return
@@ -799,15 +816,78 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
 		[dataChannel]
 	)
 
+	const updateSpeechEnabled = useCallback(
+		(enabled: boolean) => {
+			speechEnabledRef.current = enabled
+			if (!dataChannel) return
+			try {
+				dataChannel.send(
+					JSON.stringify({
+						session: {
+							...(enabled ? { voice: 'verse' } : {}),
+							modalities: enabled ? ['audio', 'text'] : ['text']
+						},
+						type: 'session.update'
+					})
+				)
+			} catch {
+				// ignore
+			}
+		},
+		[dataChannel]
+	)
+
+	const sendText = useCallback(
+		(text: string) => {
+			const trimmed = text.trim()
+			if (!trimmed || !dataChannel) return false
+			const id = crypto.randomUUID()
+			const previousItemId = latestCommittedInputItemIdRef.current
+			previousItemIdByIdRef.current.set(id, previousItemId ?? null)
+			latestCommittedInputItemIdRef.current = id
+			upsertTranscript({
+				id,
+				previousItemId,
+				replaceText: trimmed,
+				role: 'user',
+				source: 'input_text'
+			})
+			try {
+				dataChannel.send(
+					JSON.stringify({
+						item: {
+							content: [{ text: trimmed, type: 'input_text' }],
+							id,
+							role: 'user',
+							type: 'message'
+						},
+						type: 'conversation.item.create'
+					})
+				)
+				dataChannel.send(
+					JSON.stringify({
+						type: 'response.create'
+					})
+				)
+				return true
+			} catch {
+				return false
+			}
+		},
+		[dataChannel, upsertTranscript]
+	)
+
 	const value = useMemo<RealtimeContextValue>(
 		() => ({
 			clearTranscripts,
 			dataChannel,
 			remoteStream,
+			sendText,
 			start,
 			stop,
 			transcripts,
 			updateInstructions,
+			updateSpeechEnabled,
 			updateTurnDelaySeconds,
 			updateVoice
 		}),
@@ -816,9 +896,11 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
 			remoteStream,
 			transcripts,
 			start,
+			updateSpeechEnabled,
 			updateInstructions,
 			updateVoice,
 			updateTurnDelaySeconds,
+			sendText,
 			clearTranscripts,
 			stop
 		]
