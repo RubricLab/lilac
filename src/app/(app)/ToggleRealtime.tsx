@@ -1,7 +1,7 @@
 'use client'
 
 import { AnimatePresence, motion } from 'framer-motion'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { useRealtimeVoiceSession } from '@/realtime/provider'
 
@@ -16,13 +16,16 @@ Core principles:
 
 Onboarding flow:
 1. When the first participant speaks, respond in their language. Acknowledge them briefly and ask which language they want translations delivered into. Wait for their answer.
-2. Once a translation direction is confirmed, remember it. For each of that speaker's future utterances, return only the translation, formatted as "[Target language] {translation}" for every listener.
+2. Once a translation direction is confirmed, remember it. For each of that speaker's future utterances, return only the translation "{translation}" for every listener.
 3. When a new participant joins, reply in their language, confirm whom you will translate for, and ensure everyone knows which languages they will receive. Keep confirmations short.
 4. Track all participants, their names, and their preferred languages. Provide translations for every other participant. Use labels such as "[English → John] {translation}" when you know their name, otherwise default to the language label.
 5. Do not teach, embellish, or comment on the content of the conversation. Translate faithfully and efficiently.
 6. If you cannot determine a speaker's language, politely ask them—in your best guess of their language—to clarify.
 
 Your sole job is to provide fast, faithful translations that keep the conversation flowing.
+
+Overrides:
+- Sometimes, the user will have custom instructions that override the onboarding flow behavior. This is okay, and you should follow their custom instructions to let the user customize the experience.
 
 Custom instructions (these are optionally added by the user in a settings UI to augment and personalize the experience):
 ${customInstructionsToken}
@@ -64,7 +67,8 @@ const saveButtonClasses = [
 type ConnectionState = 'idle' | 'requesting' | 'ready' | 'error'
 
 export default function ToggleRealtime() {
-	const { start, stop, remoteStream, updateInstructions } = useRealtimeVoiceSession()
+	const { start, stop, remoteStream, transcripts, updateInstructions, updateTurnDelaySeconds } =
+		useRealtimeVoiceSession()
 	const [connectionState, setConnectionState] = useState<ConnectionState>('idle')
 	const [errorMessage, setErrorMessage] = useState<string | null>(null)
 	const [languageOrder, setLanguageOrder] = useState(languagePhrases)
@@ -72,10 +76,25 @@ export default function ToggleRealtime() {
 	const [customInstructions, setCustomInstructions] = useState('')
 	const [draftInstructions, setDraftInstructions] = useState('')
 	const [saveConfirmation, setSaveConfirmation] = useState('')
+	const [turnDelaySeconds, setTurnDelaySeconds] = useState(1.2)
+	const [turnDelayDraft, setTurnDelayDraft] = useState('1.2')
 	const audioContextRef = useRef<AudioContext | null>(null)
 	const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null)
 	const startedRef = useRef(false)
 	const cancelInitRef = useRef(false)
+
+	const normalizeTurnDelaySeconds = useCallback((value: number) => {
+		if (!Number.isFinite(value)) return 1.2
+		const clamped = Math.min(6, Math.max(0.2, value))
+		return Math.round(clamped * 10) / 10
+	}, [])
+
+	const turnDelayRangeStyle = useMemo(() => {
+		const min = 0.2
+		const max = 6
+		const progress = Math.min(100, Math.max(0, ((turnDelaySeconds - min) / (max - min)) * 100))
+		return { '--lilac-range-progress': `${progress}%` } as CSSProperties
+	}, [turnDelaySeconds])
 
 	const instructionsText = useMemo(() => buildPrompt(customInstructions), [customInstructions])
 
@@ -87,6 +106,17 @@ export default function ToggleRealtime() {
 			setDraftInstructions(stored)
 		}
 	}, [])
+
+	useEffect(() => {
+		if (typeof window === 'undefined') return
+		const stored = window.localStorage.getItem('lilac.turnDelaySeconds')
+		if (stored === null) return
+		const parsed = Number.parseFloat(stored)
+		if (!Number.isFinite(parsed)) return
+		const normalized = normalizeTurnDelaySeconds(parsed)
+		setTurnDelaySeconds(normalized)
+		setTurnDelayDraft(String(normalized))
+	}, [normalizeTurnDelaySeconds])
 
 	useEffect(() => {
 		if (!saveConfirmation) return
@@ -101,6 +131,12 @@ export default function ToggleRealtime() {
 		window.localStorage.setItem('lilac.customInstructions', customInstructions)
 		updateInstructions(instructionsText)
 	}, [customInstructions, instructionsText, updateInstructions])
+
+	useEffect(() => {
+		if (typeof window === 'undefined') return
+		window.localStorage.setItem('lilac.turnDelaySeconds', String(turnDelaySeconds))
+		updateTurnDelaySeconds(turnDelaySeconds)
+	}, [turnDelaySeconds, updateTurnDelaySeconds])
 
 	useEffect(() => {
 		if (typeof navigator === 'undefined') return
@@ -267,6 +303,9 @@ export default function ToggleRealtime() {
 	}, [connectionState, errorMessage])
 
 	const [activeIndex, setActiveIndex] = useState(0)
+	const transcriptListRef = useRef<HTMLDivElement | null>(null)
+	const transcriptBottomRef = useRef<HTMLDivElement | null>(null)
+	const stickToBottomRef = useRef(true)
 
 	useEffect(() => {
 		if (!languageOrder.length) return
@@ -281,20 +320,86 @@ export default function ToggleRealtime() {
 	const phrase = languageOrder[activeIndex] ?? languageOrder[0]
 	const footerText = tab === 'session' ? statusText : ''
 
+	useEffect(() => {
+		const el = transcriptListRef.current
+		if (!el) return
+
+		const onScroll = () => {
+			const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+			stickToBottomRef.current = distanceFromBottom < 140
+		}
+
+		el.addEventListener('scroll', onScroll)
+		onScroll()
+		return () => {
+			el.removeEventListener('scroll', onScroll)
+		}
+	}, [])
+
+	useEffect(() => {
+		if (!stickToBottomRef.current) return
+		// Trigger on streaming updates (deltas) while the user is pinned to the bottom.
+		void transcripts
+		transcriptBottomRef.current?.scrollIntoView({ behavior: 'auto' })
+	}, [transcripts])
+
 	const content =
 		tab === 'session' ? (
-			<AnimatePresence mode="wait">
-				<motion.span
-					key={phrase?.code ?? 'fallback'}
-					animate={{ opacity: 1, y: 0 }}
-					className="block font-semibold text-3xl text-[var(--lilac-ink)] tracking-tight sm:text-4xl"
-					exit={{ opacity: 0, y: 16 }}
-					initial={{ opacity: 0, y: -16 }}
-					transition={{ duration: 0.85, ease: 'easeInOut' }}
+			<div className="flex w-full max-w-xl flex-col gap-4">
+				<div
+					ref={transcriptListRef}
+					className="h-[62dvh] overflow-y-auto rounded-3xl border border-white/30 bg-[var(--lilac-elevated)]/70 p-4 shadow-xl backdrop-blur"
 				>
-					{phrase?.text ?? 'Introduce yourself'}
-				</motion.span>
-			</AnimatePresence>
+					{transcripts.length ? (
+						<div className="flex flex-col gap-3">
+							{transcripts.map(item => {
+								const isUser = item.role === 'user'
+								const bubbleBase =
+									'max-w-[92%] whitespace-pre-wrap rounded-3xl px-4 py-3 text-sm leading-relaxed shadow-sm'
+								const bubbleClass = isUser
+									? `${bubbleBase} self-end bg-[var(--lilac-ink)] text-[var(--lilac-surface)]`
+									: `${bubbleBase} self-start border border-white/30 bg-white/70 text-[var(--lilac-ink)] dark:border-white/22 dark:bg-white/14 dark:text-[var(--lilac-ink)]`
+								const label = isUser ? 'You' : 'Lilac'
+								const text = item.text?.trim() ? item.text : '…'
+
+								return (
+									<div key={item.id} className="flex flex-col gap-1">
+										<div
+											className={`px-1 font-semibold text-[10px] uppercase tracking-[0.18em] ${
+												isUser ? 'text-right text-[var(--lilac-ink-muted)]' : 'text-[var(--lilac-ink-muted)]'
+											}`}
+										>
+											{label}
+											{item.status === 'streaming' ? <span className="ml-2 opacity-60">•</span> : null}
+										</div>
+										<div className={bubbleClass}>{text}</div>
+									</div>
+								)
+							})}
+							<div ref={transcriptBottomRef} />
+						</div>
+					) : (
+						<div className="flex h-full flex-col items-center justify-center px-6 text-center">
+							<AnimatePresence mode="wait">
+								<motion.span
+									key={phrase?.code ?? 'fallback'}
+									animate={{ opacity: 1, y: 0 }}
+									className="block font-semibold text-3xl text-[var(--lilac-ink)] tracking-tight sm:text-4xl"
+									exit={{ opacity: 0, y: 16 }}
+									initial={{ opacity: 0, y: -16 }}
+									transition={{ duration: 0.85, ease: 'easeInOut' }}
+								>
+									{phrase?.text ?? 'Introduce yourself'}
+								</motion.span>
+							</AnimatePresence>
+							<p className="mt-6 text-[var(--lilac-ink-muted)] text-sm">
+								Your spoken conversation will appear here as a live transcript.
+							</p>
+							<div ref={transcriptBottomRef} />
+						</div>
+					)}
+				</div>
+			</div>
 		) : (
 			<div className="flex w-full max-w-xl flex-col gap-4 text-left">
 				<div className="rounded-3xl border border-white/30 bg-[var(--lilac-elevated)] p-5 text-[var(--lilac-ink)] shadow-xl backdrop-blur">
@@ -330,8 +435,59 @@ export default function ToggleRealtime() {
 						</output>
 					) : null}
 				</div>
+				<div className="rounded-3xl border border-white/30 bg-[var(--lilac-elevated)] p-5 text-[var(--lilac-ink)] shadow-xl backdrop-blur">
+					<div className="mb-1 flex items-center justify-between gap-3">
+						<div className="font-semibold text-base tracking-tight">End-of-speech delay</div>
+						<span className="rounded-full border border-white/25 bg-[var(--lilac-elevated)] px-3 py-1 font-semibold text-[10px] text-[var(--lilac-ink-muted)] uppercase tracking-[0.18em] shadow-sm backdrop-blur">
+							{turnDelaySeconds.toFixed(1)}s
+						</span>
+					</div>
+					<p className="mt-2 text-[var(--lilac-ink-muted)] text-sm">
+						If Lilac cuts you off when you speak slowly, increase this. It controls how long a pause
+						counts as “done speaking.”
+					</p>
+					<div className="mt-4 flex flex-col gap-3">
+						<input
+							className="lilac-range"
+							type="range"
+							min={0.2}
+							max={6}
+							step={0.1}
+							style={turnDelayRangeStyle}
+							value={turnDelaySeconds}
+							onChange={event => {
+								const next = normalizeTurnDelaySeconds(Number.parseFloat(event.target.value))
+								setTurnDelaySeconds(next)
+								setTurnDelayDraft(String(next))
+							}}
+						/>
+						<label className="flex items-center justify-between gap-3">
+							<span className="font-semibold text-[var(--lilac-ink-muted)] text-sm">Delay (seconds)</span>
+							<div className="flex items-center gap-2">
+								<input
+									inputMode="decimal"
+									type="number"
+									min={0.2}
+									max={6}
+									step={0.1}
+									className="lilac-number w-24 rounded-full border border-white/30 bg-white/70 px-4 py-2 text-right font-semibold text-[var(--lilac-ink)] text-sm outline-none transition focus:border-white/70 focus:bg-white dark:bg-white/10 dark:focus:border-white/30 dark:focus:bg-white/20"
+									onBlur={() => setTurnDelayDraft(String(turnDelaySeconds))}
+									onChange={event => {
+										const nextDraft = event.target.value
+										setTurnDelayDraft(nextDraft)
+										const parsed = Number.parseFloat(nextDraft)
+										if (!Number.isFinite(parsed)) return
+										setTurnDelaySeconds(normalizeTurnDelaySeconds(parsed))
+									}}
+									value={turnDelayDraft}
+								/>
+								<span className="font-semibold text-[var(--lilac-ink-muted)] text-sm">s</span>
+							</div>
+						</label>
+					</div>
+				</div>
 				<p className="px-1 text-[var(--lilac-ink-muted)] text-sm">
-					Custom instructions are stored locally on this device.
+					Settings are stored locally on this device.
 				</p>
 			</div>
 		)
@@ -355,7 +511,7 @@ export default function ToggleRealtime() {
 						aria-pressed={tab === 'session'}
 						className={`cursor-pointer rounded-full px-3 py-2 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-white focus-visible:outline-offset-2 ${
 							tab === 'session'
-								? 'bg-white text-[var(--lilac-surface)] shadow'
+								? 'bg-white text-[var(--lilac-ink)] shadow dark:text-[var(--lilac-surface)]'
 								: 'text-[var(--lilac-ink-muted)] hover:text-[var(--lilac-ink)]'
 						}`}
 						onClick={() => setTab('session')}
@@ -367,7 +523,7 @@ export default function ToggleRealtime() {
 						aria-pressed={tab === 'settings'}
 						className={`cursor-pointer rounded-full px-3 py-2 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-white focus-visible:outline-offset-2 ${
 							tab === 'settings'
-								? 'bg-white text-[var(--lilac-surface)] shadow'
+								? 'bg-white text-[var(--lilac-ink)] shadow dark:text-[var(--lilac-surface)]'
 								: 'text-[var(--lilac-ink-muted)] hover:text-[var(--lilac-ink)]'
 						}`}
 						onClick={() => setTab('settings')}
@@ -376,9 +532,7 @@ export default function ToggleRealtime() {
 					</button>
 				</div>
 			</header>
-			<div className="relative z-10 flex flex-1 items-center justify-center px-6 text-center">
-				{content}
-			</div>
+			<div className="relative z-10 flex flex-1 items-center justify-center px-6">{content}</div>
 			{footerText ? (
 				<footer
 					className="absolute right-0 left-0 z-10 flex justify-center px-6 font-medium text-[var(--lilac-ink-muted)] text-xs uppercase tracking-[0.2em]"
