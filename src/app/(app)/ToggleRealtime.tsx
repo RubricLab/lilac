@@ -67,8 +67,17 @@ const saveButtonClasses = [
 type ConnectionState = 'idle' | 'requesting' | 'ready' | 'error'
 
 export default function ToggleRealtime() {
-	const { start, stop, remoteStream, transcripts, updateInstructions, updateTurnDelaySeconds } =
-		useRealtimeVoiceSession()
+	const {
+		start,
+		stop,
+		remoteStream,
+		transcripts,
+		updateInstructions,
+		updateTurnDelaySeconds,
+		updateSpeechEnabled,
+		updateMicEnabled,
+		sendText
+	} = useRealtimeVoiceSession()
 	const [connectionState, setConnectionState] = useState<ConnectionState>('idle')
 	const [errorMessage, setErrorMessage] = useState<string | null>(null)
 	const [languageOrder, setLanguageOrder] = useState(languagePhrases)
@@ -78,6 +87,9 @@ export default function ToggleRealtime() {
 	const [saveConfirmation, setSaveConfirmation] = useState('')
 	const [turnDelaySeconds, setTurnDelaySeconds] = useState(1.2)
 	const [turnDelayDraft, setTurnDelayDraft] = useState('1.2')
+	const [speechEnabled, setSpeechEnabled] = useState(true)
+	const [micEnabled, setMicEnabled] = useState(true)
+	const [textDraft, setTextDraft] = useState('')
 	const audioContextRef = useRef<AudioContext | null>(null)
 	const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null)
 	const startedRef = useRef(false)
@@ -119,6 +131,20 @@ export default function ToggleRealtime() {
 	}, [normalizeTurnDelaySeconds])
 
 	useEffect(() => {
+		if (typeof window === 'undefined') return
+		const stored = window.localStorage.getItem('lilac.speechEnabled')
+		if (stored === null) return
+		setSpeechEnabled(stored !== 'false')
+	}, [])
+
+	useEffect(() => {
+		if (typeof window === 'undefined') return
+		const stored = window.localStorage.getItem('lilac.micEnabled')
+		if (stored === null) return
+		setMicEnabled(stored !== 'false')
+	}, [])
+
+	useEffect(() => {
 		if (!saveConfirmation) return
 		const timer = window.setTimeout(() => setSaveConfirmation(''), 1800)
 		return () => {
@@ -137,6 +163,18 @@ export default function ToggleRealtime() {
 		window.localStorage.setItem('lilac.turnDelaySeconds', String(turnDelaySeconds))
 		updateTurnDelaySeconds(turnDelaySeconds)
 	}, [turnDelaySeconds, updateTurnDelaySeconds])
+
+	useEffect(() => {
+		if (typeof window === 'undefined') return
+		window.localStorage.setItem('lilac.speechEnabled', speechEnabled ? 'true' : 'false')
+		updateSpeechEnabled(speechEnabled)
+	}, [speechEnabled, updateSpeechEnabled])
+
+	useEffect(() => {
+		if (typeof window === 'undefined') return
+		window.localStorage.setItem('lilac.micEnabled', micEnabled ? 'true' : 'false')
+		updateMicEnabled(micEnabled)
+	}, [micEnabled, updateMicEnabled])
 
 	useEffect(() => {
 		if (typeof navigator === 'undefined') return
@@ -206,6 +244,18 @@ export default function ToggleRealtime() {
 				tracks: remoteStream?.getTracks().length
 			})
 
+			if (!speechEnabled) {
+				try {
+					sourceRef.current?.disconnect()
+				} catch {}
+				sourceRef.current = null
+				try {
+					void audioContextRef.current?.close()
+				} catch {}
+				audioContextRef.current = null
+				return
+			}
+
 			if (!remoteStream.getAudioTracks().length) {
 				const onAddTrack = () => {
 					remoteStream.removeEventListener('addtrack', onAddTrack as EventListener)
@@ -240,7 +290,7 @@ export default function ToggleRealtime() {
 			} catch {}
 			audioContextRef.current = null
 		}
-	}, [remoteStream, ensureAudioContext])
+	}, [remoteStream, ensureAudioContext, speechEnabled])
 
 	const beginSession = useCallback(async () => {
 		if (startedRef.current) return
@@ -250,7 +300,10 @@ export default function ToggleRealtime() {
 
 		try {
 			ensureAudioContext()
-			await start({ instructions: instructionsText, voice: 'verse' })
+			await start({
+				instructions: instructionsText,
+				...(speechEnabled ? { voice: 'verse' } : {})
+			})
 			if (cancelInitRef.current) {
 				startedRef.current = false
 				return
@@ -265,7 +318,7 @@ export default function ToggleRealtime() {
 				error instanceof Error ? error.message : 'Something went wrong while starting Lilac.'
 			setErrorMessage(message)
 		}
-	}, [ensureAudioContext, start, instructionsText])
+	}, [ensureAudioContext, start, instructionsText, speechEnabled])
 
 	useEffect(() => {
 		cancelInitRef.current = false
@@ -319,6 +372,7 @@ export default function ToggleRealtime() {
 
 	const phrase = languageOrder[activeIndex] ?? languageOrder[0]
 	const footerText = tab === 'session' ? statusText : ''
+	const canSendText = textDraft.trim().length > 0
 
 	useEffect(() => {
 		const el = transcriptListRef.current
@@ -345,10 +399,10 @@ export default function ToggleRealtime() {
 
 	const content =
 		tab === 'session' ? (
-			<div className="flex w-full max-w-xl flex-col gap-4">
+			<div className="flex h-full min-h-0 w-full max-w-xl flex-col gap-4">
 				<div
 					ref={transcriptListRef}
-					className="h-[62dvh] overflow-y-auto rounded-3xl border border-white/30 bg-[var(--lilac-elevated)]/70 p-4 shadow-xl backdrop-blur"
+					className="flex-1 overflow-y-auto rounded-3xl border border-white/30 bg-[var(--lilac-elevated)]/70 p-4 shadow-xl backdrop-blur"
 				>
 					{transcripts.length ? (
 						<div className="flex flex-col gap-3">
@@ -398,6 +452,30 @@ export default function ToggleRealtime() {
 							<div ref={transcriptBottomRef} />
 						</div>
 					)}
+				</div>
+				<div className="rounded-3xl border border-white/25 bg-[var(--lilac-elevated)]/80 p-4 text-[var(--lilac-ink)] shadow-lg backdrop-blur">
+					<div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+						<textarea
+							className="min-h-[64px] w-full flex-1 resize-none rounded-2xl border border-white/30 bg-white/70 px-4 py-3 text-[var(--lilac-ink)] text-sm outline-none transition focus:border-white/70 focus:bg-white dark:bg-white/10 dark:focus:border-white/30 dark:focus:bg-white/20"
+							onChange={event => setTextDraft(event.target.value)}
+							placeholder="Type to translate or speak back."
+							rows={2}
+							value={textDraft}
+						/>
+						<button
+							type="button"
+							className={`${saveButtonClasses} h-11 w-full cursor-pointer text-sm sm:w-28 ${
+								canSendText ? '' : 'cursor-not-allowed opacity-60'
+							}`}
+							disabled={!canSendText}
+							onClick={() => {
+								if (!sendText(textDraft)) return
+								setTextDraft('')
+							}}
+						>
+							Send
+						</button>
+					</div>
 				</div>
 			</div>
 		) : (
@@ -501,38 +579,119 @@ export default function ToggleRealtime() {
 				className="absolute right-0 left-0 z-20 flex items-center justify-between px-6 font-medium text-[var(--lilac-ink-muted)] text-sm uppercase tracking-wide"
 				style={{ top: 'calc(env(safe-area-inset-top, 0px) + 1.75rem)' }}
 			>
-				<span>Lilac</span>
-				<div
-					className="flex rounded-full bg-[var(--lilac-elevated)] p-1 font-semibold text-xs uppercase tracking-[0.08em] shadow-sm backdrop-blur"
-					role="tablist"
-				>
+				<span className="text-[var(--lilac-ink-muted)]">Lilac</span>
+				<div className="flex flex-wrap items-center justify-end gap-2">
 					<button
 						type="button"
-						aria-pressed={tab === 'session'}
-						className={`cursor-pointer rounded-full px-3 py-2 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-white focus-visible:outline-offset-2 ${
-							tab === 'session'
-								? 'bg-white text-[var(--lilac-ink)] shadow dark:text-[var(--lilac-surface)]'
-								: 'text-[var(--lilac-ink-muted)] hover:text-[var(--lilac-ink)]'
+						aria-pressed={speechEnabled}
+						aria-label={speechEnabled ? 'Disable speech output' : 'Enable speech output'}
+						onClick={() => setSpeechEnabled(enabled => !enabled)}
+						className={`flex h-10 w-10 items-center justify-center rounded-full border shadow-sm backdrop-blur transition ${
+							speechEnabled
+								? 'border-transparent bg-[var(--lilac-ink)] text-[var(--lilac-surface)]'
+								: 'border-white/30 bg-[var(--lilac-elevated)] text-[var(--lilac-ink-muted)]'
 						}`}
-						onClick={() => setTab('session')}
 					>
-						Chat
+						<svg
+							viewBox="0 0 24 24"
+							aria-hidden="true"
+							className="h-5 w-5"
+							fill="none"
+							stroke="currentColor"
+							strokeLinecap="round"
+							strokeLinejoin="round"
+							strokeWidth="1.7"
+						>
+							{speechEnabled ? (
+								<>
+									<path d="M11 5 6 9H3v6h3l5 4V5Z" />
+									<path d="M15.5 8.5a4.5 4.5 0 0 1 0 7" />
+									<path d="M18.5 6a7.5 7.5 0 0 1 0 12" />
+								</>
+							) : (
+								<>
+									<path d="M11 5 6 9H3v6h3l5 4V5Z" />
+									<path d="M16 9 21 14" />
+									<path d="M21 9 16 14" />
+								</>
+							)}
+						</svg>
 					</button>
 					<button
 						type="button"
-						aria-pressed={tab === 'settings'}
-						className={`cursor-pointer rounded-full px-3 py-2 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-white focus-visible:outline-offset-2 ${
-							tab === 'settings'
-								? 'bg-white text-[var(--lilac-ink)] shadow dark:text-[var(--lilac-surface)]'
-								: 'text-[var(--lilac-ink-muted)] hover:text-[var(--lilac-ink)]'
+						aria-pressed={micEnabled}
+						aria-label={micEnabled ? 'Mute microphone' : 'Unmute microphone'}
+						onClick={() => setMicEnabled(enabled => !enabled)}
+						className={`flex h-10 w-10 items-center justify-center rounded-full border shadow-sm backdrop-blur transition ${
+							micEnabled
+								? 'border-transparent bg-[var(--lilac-ink)] text-[var(--lilac-surface)]'
+								: 'border-white/30 bg-[var(--lilac-elevated)] text-[var(--lilac-ink-muted)]'
 						}`}
-						onClick={() => setTab('settings')}
 					>
-						Settings
+						<svg
+							viewBox="0 0 24 24"
+							aria-hidden="true"
+							className="h-5 w-5"
+							fill="none"
+							stroke="currentColor"
+							strokeLinecap="round"
+							strokeLinejoin="round"
+							strokeWidth="1.7"
+						>
+							{micEnabled ? (
+								<>
+									<path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 1 0 6 0V6a3 3 0 0 0-3-3Z" />
+									<path d="M5 11a7 7 0 0 0 14 0" />
+									<path d="M12 18v3" />
+									<path d="M8 21h8" />
+								</>
+							) : (
+								<>
+									<path d="M12 3a3 3 0 0 0-3 3v4" />
+									<path d="M5 11a7 7 0 0 0 9 6.7" />
+									<path d="M12 18v3" />
+									<path d="M8 21h8" />
+									<path d="M4 4 20 20" />
+								</>
+							)}
+						</svg>
 					</button>
+					<div
+						className="flex rounded-full bg-[var(--lilac-elevated)] p-1 font-semibold text-xs uppercase tracking-[0.08em] shadow-sm backdrop-blur"
+						role="tablist"
+					>
+						<button
+							type="button"
+							aria-pressed={tab === 'session'}
+							className={`cursor-pointer rounded-full px-3 py-2 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-white focus-visible:outline-offset-2 ${
+								tab === 'session'
+									? 'bg-white text-[var(--lilac-ink)] shadow dark:text-[var(--lilac-surface)]'
+									: 'text-[var(--lilac-ink-muted)] hover:text-[var(--lilac-ink)]'
+							}`}
+							onClick={() => setTab('session')}
+						>
+							Chat
+						</button>
+						<button
+							type="button"
+							aria-pressed={tab === 'settings'}
+							className={`cursor-pointer rounded-full px-3 py-2 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-white focus-visible:outline-offset-2 ${
+								tab === 'settings'
+									? 'bg-white text-[var(--lilac-ink)] shadow dark:text-[var(--lilac-surface)]'
+									: 'text-[var(--lilac-ink-muted)] hover:text-[var(--lilac-ink)]'
+							}`}
+							onClick={() => setTab('settings')}
+						>
+							Settings
+						</button>
+					</div>
 				</div>
 			</header>
-			<div className="relative z-10 flex flex-1 items-center justify-center px-6">{content}</div>
+			<div className="relative z-10 flex flex-1 items-center justify-center px-6">
+				<div className="flex h-full min-h-0 w-full justify-center pt-[calc(env(safe-area-inset-top,0px)+6rem)] pb-[calc(env(safe-area-inset-bottom,0px)+5rem)]">
+					{content}
+				</div>
+			</div>
 			{footerText ? (
 				<footer
 					className="absolute right-0 left-0 z-10 flex justify-center px-6 font-medium text-[var(--lilac-ink-muted)] text-xs uppercase tracking-[0.2em]"
