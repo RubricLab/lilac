@@ -1,7 +1,15 @@
 'use client'
 
 import { AnimatePresence, motion } from 'framer-motion'
-import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+	type CSSProperties,
+	useCallback,
+	useEffect,
+	useLayoutEffect,
+	useMemo,
+	useRef,
+	useState
+} from 'react'
 
 import { useRealtimeVoiceSession } from '@/realtime/provider'
 
@@ -357,7 +365,6 @@ export default function ToggleRealtime() {
 
 	const [activeIndex, setActiveIndex] = useState(0)
 	const transcriptListRef = useRef<HTMLDivElement | null>(null)
-	const transcriptBottomRef = useRef<HTMLDivElement | null>(null)
 	const stickToBottomRef = useRef(true)
 
 	useEffect(() => {
@@ -373,6 +380,7 @@ export default function ToggleRealtime() {
 	const phrase = languageOrder[activeIndex] ?? languageOrder[0]
 	const footerText = tab === 'session' ? statusText : ''
 	const canSendText = textDraft.trim().length > 0
+	const transcriptCount = transcripts.length
 
 	useEffect(() => {
 		const el = transcriptListRef.current
@@ -390,12 +398,11 @@ export default function ToggleRealtime() {
 		}
 	}, [])
 
-	useEffect(() => {
-		if (!stickToBottomRef.current) return
-		// Trigger on streaming updates (deltas) while the user is pinned to the bottom.
-		void transcripts
-		transcriptBottomRef.current?.scrollIntoView({ behavior: 'auto' })
-	}, [transcripts])
+	useLayoutEffect(() => {
+		const el = transcriptListRef.current
+		if (!el || !stickToBottomRef.current || transcriptCount === 0) return
+		el.scrollTop = el.scrollHeight
+	}, [transcriptCount])
 
 	const content =
 		tab === 'session' ? (
@@ -430,7 +437,6 @@ export default function ToggleRealtime() {
 									</div>
 								)
 							})}
-							<div ref={transcriptBottomRef} />
 						</div>
 					) : (
 						<div className="flex h-full flex-col items-center justify-center px-6 text-center">
@@ -449,7 +455,6 @@ export default function ToggleRealtime() {
 							<p className="mt-6 text-[var(--lilac-ink-muted)] text-sm">
 								Your spoken conversation will appear here as a live transcript.
 							</p>
-							<div ref={transcriptBottomRef} />
 						</div>
 					)}
 				</div>
