@@ -28,6 +28,7 @@ type RealtimeContextValue = {
 	updateVoice: (voice: string) => void
 	updateTurnDelaySeconds: (seconds: number) => void
 	updateSpeechEnabled: (enabled: boolean) => void
+	updateMicEnabled: (enabled: boolean) => void
 	sendText: (text: string) => boolean
 	clearTranscripts: () => void
 	stop: () => void
@@ -151,6 +152,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
 		Map<string, { text: string; audioTranscript: string }>
 	>(new Map())
 	const speechEnabledRef = useRef(true)
+	const micEnabledRef = useRef(true)
 
 	const cleanup = useCallback(() => {
 		peerRef.current?.close()
@@ -307,6 +309,9 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
 					audioTracks: mic.getAudioTracks().length
 				})
 				localRef.current = mic
+				for (const track of mic.getTracks()) {
+					track.enabled = micEnabledRef.current
+				}
 
 				const peer = new RTCPeerConnection()
 				pc = peer
@@ -837,6 +842,13 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
 		[dataChannel]
 	)
 
+	const updateMicEnabled = useCallback((enabled: boolean) => {
+		micEnabledRef.current = enabled
+		for (const track of localRef.current?.getTracks() ?? []) {
+			track.enabled = enabled
+		}
+	}, [])
+
 	const sendText = useCallback(
 		(text: string) => {
 			const trimmed = text.trim()
@@ -887,6 +899,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
 			stop,
 			transcripts,
 			updateInstructions,
+			updateMicEnabled,
 			updateSpeechEnabled,
 			updateTurnDelaySeconds,
 			updateVoice
@@ -900,6 +913,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
 			updateInstructions,
 			updateVoice,
 			updateTurnDelaySeconds,
+			updateMicEnabled,
 			sendText,
 			clearTranscripts,
 			stop
