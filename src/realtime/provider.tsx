@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 
 import { createRealtimeSession } from '@/app/actions/realtime'
 
@@ -134,6 +134,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
 	const peerRef = useRef<RTCPeerConnection | null>(null)
 	const localRef = useRef<MediaStream | null>(null)
 	const turnDelaySecondsRef = useRef<number>(getInitialTurnDelaySeconds())
+	const latestTimelineItemIdRef = useRef<string | null>(null)
 	// Cancels in-flight `start()` calls and prevents multiple concurrent sessions.
 	const startGenerationRef = useRef(0)
 	// Stable transcript item id we choose for a given response_id (so we don't "split" a message mid-stream).
@@ -182,6 +183,10 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
 	const reorderTranscripts = useCallback(() => {
 		setTranscripts(prev => orderTranscriptsByPreviousItemId(prev, previousItemIdByIdRef.current))
 	}, [])
+
+	useEffect(() => {
+		latestTimelineItemIdRef.current = transcripts.at(-1)?.id ?? null
+	}, [transcripts])
 
 	const upsertTranscript = useCallback(
 		(update: {
@@ -854,7 +859,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
 			const trimmed = text.trim()
 			if (!trimmed || !dataChannel) return false
 			const id = crypto.randomUUID()
-			const previousItemId = latestCommittedInputItemIdRef.current
+			const previousItemId = latestTimelineItemIdRef.current
 			previousItemIdByIdRef.current.set(id, previousItemId ?? null)
 			latestCommittedInputItemIdRef.current = id
 			upsertTranscript({
