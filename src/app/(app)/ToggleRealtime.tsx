@@ -1,7 +1,15 @@
 'use client'
 
 import { AnimatePresence, motion } from 'framer-motion'
-import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+	type CSSProperties,
+	useCallback,
+	useEffect,
+	useLayoutEffect,
+	useMemo,
+	useRef,
+	useState
+} from 'react'
 
 import { useRealtimeVoiceSession } from '@/realtime/provider'
 
@@ -357,7 +365,6 @@ export default function ToggleRealtime() {
 
 	const [activeIndex, setActiveIndex] = useState(0)
 	const transcriptListRef = useRef<HTMLDivElement | null>(null)
-	const transcriptBottomRef = useRef<HTMLDivElement | null>(null)
 	const stickToBottomRef = useRef(true)
 
 	useEffect(() => {
@@ -390,36 +397,37 @@ export default function ToggleRealtime() {
 		}
 	}, [])
 
-	useEffect(() => {
-		if (!stickToBottomRef.current) return
-		// Trigger on streaming updates (deltas) while the user is pinned to the bottom.
-		void transcripts
-		transcriptBottomRef.current?.scrollIntoView({ behavior: 'auto' })
+	useLayoutEffect(() => {
+		const el = transcriptListRef.current
+		const last = transcripts.at(-1)
+		if (!el || !stickToBottomRef.current || !last) return
+		el.scrollTop = el.scrollHeight
 	}, [transcripts])
 
 	const content =
 		tab === 'session' ? (
-			<div className="flex h-full min-h-0 w-full max-w-xl flex-col gap-4">
+			<div className="flex h-full min-h-0 w-full max-w-xl flex-col gap-4 overflow-hidden">
 				<div
 					ref={transcriptListRef}
-					className="flex-1 overflow-y-auto rounded-3xl border border-white/30 bg-[var(--lilac-elevated)]/70 p-4 shadow-xl backdrop-blur"
+					className="min-h-0 flex-1 overflow-y-auto overscroll-contain rounded-[28px] border border-white/30 bg-[var(--lilac-elevated)]/85 p-5 shadow-2xl backdrop-blur-xl"
+					style={{ scrollbarGutter: 'stable both-edges' }}
 				>
 					{transcripts.length ? (
-						<div className="flex flex-col gap-3">
+						<div className="flex flex-col gap-4">
 							{transcripts.map(item => {
 								const isUser = item.role === 'user'
 								const bubbleBase =
-									'max-w-[92%] whitespace-pre-wrap rounded-3xl px-4 py-3 text-sm leading-relaxed shadow-sm'
+									'max-w-[90%] break-words whitespace-pre-wrap rounded-[22px] px-4 py-3 text-sm leading-relaxed shadow-md'
 								const bubbleClass = isUser
-									? `${bubbleBase} self-end bg-[var(--lilac-ink)] text-[var(--lilac-surface)]`
-									: `${bubbleBase} self-start border border-white/30 bg-white/70 text-[var(--lilac-ink)] dark:border-white/22 dark:bg-white/14 dark:text-[var(--lilac-ink)]`
+									? `${bubbleBase} self-end bg-[linear-gradient(135deg,rgba(53,32,73,0.95),rgba(80,52,110,0.92))] text-[var(--lilac-surface)]`
+									: `${bubbleBase} self-start border border-white/30 bg-white/70 text-[var(--lilac-ink)] dark:border-white/22 dark:bg-white/12 dark:text-[var(--lilac-ink)]`
 								const label = isUser ? 'You' : 'Lilac'
 								const text = item.text?.trim() ? item.text : '…'
 
 								return (
 									<div key={item.id} className="flex flex-col gap-1">
 										<div
-											className={`px-1 font-semibold text-[10px] uppercase tracking-[0.18em] ${
+											className={`px-1 font-semibold text-[11px] uppercase tracking-[0.2em] ${
 												isUser ? 'text-right text-[var(--lilac-ink-muted)]' : 'text-[var(--lilac-ink-muted)]'
 											}`}
 										>
@@ -430,7 +438,6 @@ export default function ToggleRealtime() {
 									</div>
 								)
 							})}
-							<div ref={transcriptBottomRef} />
 						</div>
 					) : (
 						<div className="flex h-full flex-col items-center justify-center px-6 text-center">
@@ -449,14 +456,13 @@ export default function ToggleRealtime() {
 							<p className="mt-6 text-[var(--lilac-ink-muted)] text-sm">
 								Your spoken conversation will appear here as a live transcript.
 							</p>
-							<div ref={transcriptBottomRef} />
 						</div>
 					)}
 				</div>
-				<div className="rounded-3xl border border-white/25 bg-[var(--lilac-elevated)]/80 p-4 text-[var(--lilac-ink)] shadow-lg backdrop-blur">
+				<div className="rounded-[28px] border border-white/25 bg-[var(--lilac-elevated)]/90 p-4 text-[var(--lilac-ink)] shadow-xl backdrop-blur-xl">
 					<div className="flex flex-col gap-3 sm:flex-row sm:items-end">
 						<textarea
-							className="min-h-[64px] w-full flex-1 resize-none rounded-2xl border border-white/30 bg-white/70 px-4 py-3 text-[var(--lilac-ink)] text-sm outline-none transition focus:border-white/70 focus:bg-white dark:bg-white/10 dark:focus:border-white/30 dark:focus:bg-white/20"
+							className="min-h-[64px] w-full flex-1 resize-none rounded-[22px] border border-white/30 bg-white/75 px-4 py-3 text-[var(--lilac-ink)] text-sm outline-none transition focus:border-white/70 focus:bg-white/90 dark:bg-white/10 dark:focus:border-white/30 dark:focus:bg-white/20"
 							onChange={event => setTextDraft(event.target.value)}
 							placeholder="Type to translate or speak back."
 							rows={2}
@@ -687,8 +693,8 @@ export default function ToggleRealtime() {
 					</div>
 				</div>
 			</header>
-			<div className="relative z-10 flex flex-1 items-center justify-center px-6">
-				<div className="flex h-full min-h-0 w-full justify-center pt-[calc(env(safe-area-inset-top,0px)+6rem)] pb-[calc(env(safe-area-inset-bottom,0px)+5rem)]">
+			<div className="relative z-10 flex min-h-0 flex-1 items-center justify-center px-6">
+				<div className="flex h-full min-h-0 w-full justify-center overflow-hidden pt-[calc(env(safe-area-inset-top,0px)+6rem)] pb-[calc(env(safe-area-inset-bottom,0px)+5rem)]">
 					{content}
 				</div>
 			</div>
